@@ -14,7 +14,7 @@ export default async (req: any, res: any) => {
       app = await NestFactory.create(AppModule, new ExpressAdapter(server));
       app.setGlobalPrefix('api');
       app.enableCors({
-        origin: process.env.FRONTEND_URL || '*',
+        origin: process.env.FRONTEND_URL ? process.env.FRONTEND_URL.split(',') : true,
         credentials: true,
       });
       app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
