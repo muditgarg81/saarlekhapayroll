@@ -1,0 +1,859 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─── Company ────────────────────────────────────────────────
+model Company {
+  id               String   @id @default(cuid())
+  name             String
+  legalName        String
+  cin              String?  // Corporate Identity Number
+  pan              String
+  tan              String?
+  pfRegistrationNo String?
+  esiRegistrationNo String?
+  gstNo            String?
+  industry         String?
+  state            String
+  payrollCycle     String   @default("MONTHLY") // MONTHLY | WEEKLY
+  financialYearStart Int    @default(4) // April
+  logoUrl          String?
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  employees        Employee[]
+  departments      Department[]
+  branches         Branch[]
+  users            User[]
+  salaryComponents SalaryComponent[]
+  salaryStructures SalaryStructure[]
+  payruns          Payrun[]
+  leavePolicies    LeavePolicy[]
+  holidays         Holiday[]
+  shifts           Shift[]
+  shiftRosters     ShiftRoster[]
+  contractors      Contractor[]
+  contractorPayruns ContractorPayrun[]
+  reportTemplates  ReportTemplate[]
+  integrations     Integration[]
+}
+
+// ─── Branch ──────────────────────────────────────────────────
+model Branch {
+  id           String   @id @default(cuid())
+  name         String
+  code         String
+  addressLine1 String?
+  city         String?
+  state        String   // own state → drives Professional Tax for employees at this branch
+  pincode      String?
+  isHeadOffice Boolean  @default(false)
+  isActive     Boolean  @default(true)
+  companyId    String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  company      Company    @relation(fields: [companyId], references: [id])
+  employees    Employee[]
+
+  @@unique([code, companyId])
+}
+
+// ─── User & Auth ────────────────────────────────────────────
+model User {
+  id               String    @id @default(cuid())
+  email            String    @unique
+  passwordHash     String
+  role             String    @default("EMPLOYEE") // SUPER_ADMIN | ADMIN | HR_MANAGER | MANAGER | EMPLOYEE
+  employeeId       String?   @unique
+  companyId        String
+  isActive         Boolean   @default(true)
+  lastLoginAt      DateTime?
+  // MFA
+  mfaEnabled       Boolean   @default(false)
+  mfaSecret        String?   // TOTP secret (encrypted at rest ideally)
+  mfaBackupCodes   String?   // JSON array of bcrypt-hashed backup codes
+  mfaTempToken     String?   // short-lived token issued mid-login for MFA challenge
+  mfaTempExpiry    DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  company          Company   @relation(fields: [companyId], references: [id])
+  employee         Employee? @relation(fields: [employeeId], references: [id])
+  auditLogs        AuditLog[]
+}
+
+// ─── Audit Trail ─────────────────────────────────────────────
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String
+  companyId  String
+  action     String   // LOGIN | CREATE | UPDATE | DELETE | APPROVE | EXPORT
+  entity     String   // Employee | Payrun | Payslip | User | Branch ...
+  entityId   String?
+  summary    String?  // human-readable description
+  oldValues  Json?
+  newValues  Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  user       User     @relation(fields: [userId], references: [id])
+
+  @@index([companyId, createdAt])
+  @@index([userId, createdAt])
+  @@index([entity, entityId])
+}
+
+// ─── Department ──────────────────────────────────────────────
+model Department {
+  id        String   @id @default(cuid())
+  name      String
+  code      String
+  type      String   @default("DEPARTMENT") // DEPARTMENT | TEAM
+  parentId  String?
+  headId    String?
+  companyId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company   Company  @relation(fields: [companyId], references: [id])
+  employees Employee[]
+  parent    Department? @relation("DeptHierarchy", fields: [parentId], references: [id])
+  children  Department[] @relation("DeptHierarchy")
+
+  @@unique([code, companyId])
+}
+
+// ─── Employee ────────────────────────────────────────────────
+model Employee {
+  id               String   @id @default(cuid())
+  employeeCode     String
+  firstName        String
+  lastName         String
+  email            String
+  phone            String
+  dateOfBirth      DateTime
+  gender           String
+  pan              String
+  aadhaar          String?
+  uan              String?  // UAN for PF
+  esiNumber        String?
+  designation      String
+  grade            String?  // e.g. L1, L2, M1, M2 — pay-band / seniority grade
+  departmentId     String
+  branchId         String?
+  managerId        String?
+  employmentType   String   @default("FULL_TIME")
+  status           String   @default("ACTIVE")
+  dateOfJoining    DateTime
+  dateOfLeaving    DateTime?
+  probationEndDate DateTime?
+  salaryStructureId String
+  ctc              Float
+  companyId        String
+
+  // Address
+  addressLine1     String
+  addressLine2     String?
+  city             String
+  state            String
+  pincode          String
+
+  // Bank Details
+  bankName         String
+  accountNumber    String
+  ifscCode         String
+  accountType      String   @default("SAVINGS")
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  company          Company          @relation(fields: [companyId], references: [id])
+  department       Department       @relation(fields: [departmentId], references: [id])
+  branch           Branch?          @relation(fields: [branchId], references: [id])
+  salaryStructure  SalaryStructure  @relation(fields: [salaryStructureId], references: [id])
+  payslips         Payslip[]
+  leaveBalances         LeaveBalance[]
+  leaveApplications     LeaveApplication[]
+  attendanceRecords     Attendance[]
+  shiftRosters          ShiftRoster[]
+  regularizations       AttendanceRegularization[]
+  tdsDeclarations       TDSDeclaration[]
+  form16s               Form16[]
+  documents             EmployeeDocument[]
+  bankTransactions      BankTransaction[]
+  reimbursements        ReimbursementClaim[]
+  user                  User?
+
+  @@unique([employeeCode, companyId])
+  @@unique([email, companyId])
+}
+
+// ─── Employee Documents (KYC / statutory) ───────────────────
+model EmployeeDocument {
+  id          String   @id @default(cuid())
+  employeeId  String
+  type        String   // AADHAAR | PAN | PASSPORT | BANK_PROOF | OFFER_LETTER | EDUCATION | OTHER
+  fileName    String
+  fileUrl     String   // storage reference (path / object key / data URL)
+  mimeType    String?
+  sizeBytes   Int?
+  number      String?  // document number (e.g. masked Aadhaar / PAN)
+  uploadedBy  String?
+  createdAt   DateTime @default(now())
+
+  employee    Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId, type])
+}
+
+// ─── Salary Components ───────────────────────────────────────
+model SalaryComponent {
+  id              String   @id @default(cuid())
+  name            String
+  code            String
+  type            String   // EARNING | DEDUCTION
+  calculationType String   // FIXED | PERCENTAGE_OF_CTC | PERCENTAGE_OF_BASIC | FORMULA
+  value           Float    @default(0)
+  formula         String?
+  isTaxable       Boolean  @default(true)
+  isStatutory     Boolean  @default(false)
+  isActive        Boolean  @default(true)
+  companyId       String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  company         Company  @relation(fields: [companyId], references: [id])
+  structureComponents SalaryStructureComponent[]
+  payslipLines    PayslipLine[]
+
+  @@unique([code, companyId])
+}
+
+model SalaryStructure {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  companyId   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company     Company  @relation(fields: [companyId], references: [id])
+  components  SalaryStructureComponent[]
+  employees   Employee[]
+
+  @@unique([name, companyId])
+}
+
+model SalaryStructureComponent {
+  id                String  @id @default(cuid())
+  salaryStructureId String
+  componentId       String
+  order             Int     @default(0)
+
+  structure   SalaryStructure @relation(fields: [salaryStructureId], references: [id])
+  component   SalaryComponent @relation(fields: [componentId], references: [id])
+
+  @@unique([salaryStructureId, componentId])
+}
+
+// ─── Payrun ──────────────────────────────────────────────────
+model Payrun {
+  id              String    @id @default(cuid())
+  companyId       String
+  month           Int
+  year            Int
+  // type: REGULAR | OFF_CYCLE | SUPPLEMENTARY | FULL_FINAL
+  type            String    @default("REGULAR")
+  // status: DRAFT → PENDING_REVIEW → PENDING_APPROVAL → APPROVED → PAID | CANCELLED
+  status          String    @default("DRAFT")
+  payDate         DateTime?
+  totalEmployees  Int       @default(0)
+  totalGross      Float     @default(0)
+  totalDeductions Float     @default(0)
+  totalNetPay     Float     @default(0)
+  createdBy       String
+  reviewedBy      String?
+  reviewedAt      DateTime?
+  approvedBy      String?
+  approvedAt      DateTime?
+  notes           String?
+  employeeIds     Json?     // for off-cycle / FnF: restrict to subset
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  company         Company   @relation(fields: [companyId], references: [id])
+  payslips        Payslip[]
+  bankAdvices     BankAdvice[]
+
+  @@unique([companyId, month, year, type])
+}
+
+// ─── Bank Payments ────────────────────────────────────────────
+// One BankAdvice per payrun (or per bank if split by bank)
+model BankAdvice {
+  id              String    @id @default(cuid())
+  companyId       String
+  payrunId        String
+  adviceNo        String    // e.g. BA-2024-06-001
+  bankName        String    // company's debit bank (HDFC, SBI, ICICI …)
+  ifscCode        String?   // company bank IFSC
+  accountNo       String?   // company debit account
+  mode            String    @default("NEFT") // NEFT | IMPS | RTGS
+  totalAmount     Float
+  employeeCount   Int
+  // status: GENERATED → UPLOADED → PROCESSING → COMPLETED | FAILED | PARTIALLY_PAID
+  status          String    @default("GENERATED")
+  generatedAt     DateTime  @default(now())
+  uploadedAt      DateTime?
+  processedAt     DateTime?
+  fileUrl         String?   // stored advice file
+  remarks         String?
+  createdBy       String
+  updatedAt       DateTime  @updatedAt
+
+  payrun          Payrun         @relation(fields: [payrunId], references: [id])
+  transactions    BankTransaction[]
+
+  @@index([companyId, status])
+  @@index([payrunId])
+}
+
+// One row per employee payment within an advice
+model BankTransaction {
+  id              String    @id @default(cuid())
+  adviceId        String
+  employeeId      String
+  employeeCode    String
+  employeeName    String
+  bankName        String    // employee's bank
+  accountNumber   String
+  ifscCode        String
+  accountType     String    @default("SAVINGS")
+  amount          Float     // net pay
+  mode            String    @default("NEFT")
+  // status: PENDING | SUCCESS | FAILED | RETURNED
+  status          String    @default("PENDING")
+  utr             String?   // UTR / reference number from bank
+  failureReason   String?
+  processedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  advice          BankAdvice @relation(fields: [adviceId], references: [id], onDelete: Cascade)
+  employee        Employee   @relation(fields: [employeeId], references: [id])
+
+  @@unique([adviceId, employeeId])
+  @@index([adviceId, status])
+}
+
+model Payslip {
+  id                String   @id @default(cuid())
+  payrunId          String
+  employeeId        String
+  month             Int
+  year              Int
+  workingDays       Int
+  paidDays          Float
+  lopDays           Float    @default(0)
+  grossEarnings     Float
+  totalDeductions   Float
+  netPay            Float
+  status            String   @default("DRAFT")
+  pdfUrl            String?
+  // Per-payslip overrides applied before finalisation
+  overrideComponents Json?   // { "BONUS": 5000, "LTA": 1000 } — component code → override amount
+  overrideNote      String?
+  // FnF extras
+  gratuityAmount    Float?
+  leaveEncashment   Float?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  payrun            Payrun   @relation(fields: [payrunId], references: [id])
+  employee          Employee @relation(fields: [employeeId], references: [id])
+  lines             PayslipLine[]
+
+  @@unique([payrunId, employeeId])
+}
+
+model PayslipLine {
+  id          String @id @default(cuid())
+  payslipId   String
+  componentId String
+  type        String // EARNING | DEDUCTION
+  amount      Float
+
+  payslip     Payslip         @relation(fields: [payslipId], references: [id], onDelete: Cascade)
+  component   SalaryComponent @relation(fields: [componentId], references: [id])
+}
+
+// ─── Leave ───────────────────────────────────────────────────
+model LeavePolicy {
+  id                   String  @id @default(cuid())
+  companyId            String
+  leaveType            String
+  name                 String
+  description          String?
+  annualAllotment      Float
+  carryForwardAllowed  Boolean @default(false)
+  maxCarryForward      Float?
+  encashmentAllowed    Boolean @default(false)
+  isPaid               Boolean @default(true)
+  isActive             Boolean @default(true)
+  requiresApproval     Boolean @default(true)
+  maxConsecutiveDays   Int?
+  color                String  @default("#6366f1") // for calendar
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @default(now()) @updatedAt
+
+  company              Company @relation(fields: [companyId], references: [id])
+  balances             LeaveBalance[]
+}
+
+model LeaveBalance {
+  id             String @id @default(cuid())
+  employeeId     String
+  leavePolicyId  String
+  financialYear  String  // e.g. "2024-25"
+  allocated      Float   @default(0)
+  carryForward   Float   @default(0)  // brought forward from prev FY
+  taken          Float   @default(0)
+  pending        Float   @default(0)
+  encashed       Float   @default(0)  // days encashed this FY
+
+  employee       Employee    @relation(fields: [employeeId], references: [id])
+  policy         LeavePolicy @relation(fields: [leavePolicyId], references: [id])
+
+  @@unique([employeeId, leavePolicyId, financialYear])
+}
+
+model LeaveApplication {
+  id              String    @id @default(cuid())
+  employeeId      String
+  leavePolicyId   String?   // linked policy for balance ops
+  leaveType       String
+  fromDate        DateTime
+  toDate          DateTime
+  days            Float
+  reason          String
+  status          String    @default("PENDING") // PENDING | APPROVED | REJECTED | CANCELLED
+  appliedAt       DateTime  @default(now())
+  reviewedBy      String?
+  reviewedAt      DateTime?
+  reviewComment   String?
+  cancelledAt     DateTime?
+  cancelledBy     String?
+  cancelReason    String?
+  isHalfDay       Boolean   @default(false)
+
+  employee        Employee    @relation(fields: [employeeId], references: [id])
+}
+
+model Holiday {
+  id        String   @id @default(cuid())
+  companyId String
+  name      String
+  date      DateTime
+  type      String   @default("NATIONAL")  // NATIONAL | STATE | RESTRICTED | OPTIONAL
+  states    String?  // JSON array of state names; null = all states
+  isOptional Boolean @default(false)       // optional holiday (employee can choose)
+
+  company   Company  @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, date, name])
+}
+
+// ─── Attendance ──────────────────────────────────────────────
+model Shift {
+  id                    String   @id @default(cuid())
+  companyId             String
+  name                  String   // e.g. "Morning Shift", "Night Shift"
+  startTime             String   // "09:00" HH:mm 24h
+  endTime               String   // "18:00" HH:mm 24h
+  weeklyOffDays         String   @default("[0,6]")  // JSON array of 0=Sun..6=Sat
+  graceMinutes          Int      @default(15)        // late grace period
+  overtimeAfterMinutes  Int      @default(0)         // OT starts after N extra minutes
+  isNightShift          Boolean  @default(false)
+  isDefault             Boolean  @default(false)
+  isActive              Boolean  @default(true)
+  createdAt             DateTime @default(now())
+
+  company    Company        @relation(fields: [companyId], references: [id])
+  rosters    ShiftRoster[]
+  attendance Attendance[]
+
+  @@unique([companyId, name])
+}
+
+model ShiftRoster {
+  id          String   @id @default(cuid())
+  companyId   String
+  employeeId  String
+  shiftId     String
+  fromDate    DateTime @db.Date
+  toDate      DateTime @db.Date
+  createdAt   DateTime @default(now())
+  createdBy   String?
+
+  company     Company  @relation(fields: [companyId], references: [id])
+  employee    Employee @relation(fields: [employeeId], references: [id])
+  shift       Shift    @relation(fields: [shiftId], references: [id])
+}
+
+model AttendanceRegularization {
+  id              String   @id @default(cuid())
+  employeeId      String
+  date            DateTime @db.Date
+  requestedStatus String   // PRESENT | HALF_DAY
+  checkIn         String?  // "HH:mm"
+  checkOut        String?  // "HH:mm"
+  reason          String
+  status          String   @default("PENDING") // PENDING | APPROVED | REJECTED
+  reviewedBy      String?
+  reviewedAt      DateTime?
+  reviewComment   String?
+  createdAt       DateTime @default(now())
+
+  employee        Employee @relation(fields: [employeeId], references: [id])
+}
+
+model Attendance {
+  id              String   @id @default(cuid())
+  employeeId      String
+  date            DateTime @db.Date
+  checkIn         DateTime?
+  checkOut        DateTime?
+  status          String   @default("PRESENT") // PRESENT | ABSENT | HALF_DAY | ON_LEAVE | HOLIDAY | WEEKEND
+  source          String   @default("MANUAL")  // MANUAL | BIOMETRIC | SYSTEM
+  shiftId         String?
+  overtimeMinutes Int      @default(0)
+  lateMinutes     Int      @default(0)
+  isRegularized   Boolean  @default(false)
+  notes           String?
+
+  employee        Employee @relation(fields: [employeeId], references: [id])
+  shift           Shift?   @relation(fields: [shiftId], references: [id])
+
+  @@unique([employeeId, date])
+}
+
+// ─── TDS / Tax ───────────────────────────────────────────────
+model TDSDeclaration {
+  id               String   @id @default(cuid())
+  employeeId       String
+  financialYear    String
+  regime           String   @default("NEW") // OLD | NEW
+  // 80C investments
+  section80C       Float    @default(0)
+  epfContribution  Float    @default(0)
+  ppfContribution  Float    @default(0)
+  elssInvestment   Float    @default(0)
+  lifeInsurance    Float    @default(0)
+  housingLoanPrincipal Float @default(0)
+  // Other sections
+  section80D       Float    @default(0)  // medical insurance
+  section80G       Float    @default(0)  // donations
+  section80E       Float    @default(0)  // education loan interest
+  section80EE      Float    @default(0)  // first home loan extra
+  npsContrib80CCD1B Float   @default(0)  // self NPS (max ₹50k extra)
+  // Exemptions
+  hraExemption     Float    @default(0)
+  ltaExemption     Float    @default(0)
+  homeLoanInterest Float    @default(0)  // Sec 24(b) - max ₹2L
+  otherDeductions  Float    @default(0)
+  // Metadata
+  rentPaidMonthly  Float    @default(0)  // for HRA auto-calc
+  isMedroCity      Boolean  @default(false) // metro = 50% HRA, else 40%
+  submittedAt      DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  isApproved       Boolean  @default(false)
+  approvedBy       String?
+  approvedAt       DateTime?
+
+  employee         Employee    @relation(fields: [employeeId], references: [id])
+  form16s          Form16[]
+
+  @@unique([employeeId, financialYear])
+}
+
+model Form16 {
+  id               String   @id @default(cuid())
+  employeeId       String
+  companyId        String
+  financialYear    String
+  // Computed tax figures
+  grossSalary      Float    @default(0)
+  standardDeduction Float   @default(0)
+  totalDeductions  Float    @default(0)
+  taxableIncome    Float    @default(0)
+  grossTax         Float    @default(0)
+  surcharge        Float    @default(0)
+  cess             Float    @default(0)
+  totalTaxLiability Float   @default(0)
+  totalTDSDeducted Float    @default(0)
+  // Status
+  status           String   @default("DRAFT") // DRAFT | ISSUED | ESIGNED
+  issuedAt         DateTime?
+  eSignedAt        DateTime?
+  pdfUrl           String?
+  declarationId    String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  employee         Employee       @relation(fields: [employeeId], references: [id])
+  declaration      TDSDeclaration? @relation(fields: [declarationId], references: [id])
+
+  @@unique([employeeId, financialYear])
+}
+
+model TDSReturn24Q {
+  id            String   @id @default(cuid())
+  companyId     String
+  financialYear String
+  quarter       Int      // 1-4
+  // Q1: Apr-Jun, Q2: Jul-Sep, Q3: Oct-Dec, Q4: Jan-Mar
+  totalSalary   Float    @default(0)
+  totalTDS      Float    @default(0)
+  employeeCount Int      @default(0)
+  status        String   @default("PENDING") // PENDING | FILED
+  filedAt       DateTime?
+  data          Json?    // full deductee-wise JSON
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([companyId, financialYear, quarter])
+}
+
+// ─── Employee Self-Service ────────────────────────────────────
+model ReimbursementClaim {
+  id            String   @id @default(cuid())
+  employeeId    String
+  companyId     String
+  category      String   // TRAVEL | MEDICAL | FOOD | INTERNET | PHONE | OTHER
+  description   String
+  amount        Float
+  claimDate     DateTime @db.Date
+  receiptUrl    String?  // uploaded receipt
+  status        String   @default("PENDING") // PENDING | APPROVED | REJECTED | PAID
+  reviewedBy    String?
+  reviewedAt    DateTime?
+  reviewComment String?
+  paidAt        DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  employee      Employee @relation(fields: [employeeId], references: [id])
+
+  @@index([companyId, status])
+  @@index([employeeId, createdAt])
+}
+
+model WhatsAppDeliveryLog {
+  id          String   @id @default(cuid())
+  employeeId  String
+  companyId   String
+  payslipId   String?
+  phone       String
+  messageId   String?  // WhatsApp message ID returned by provider
+  status      String   @default("QUEUED") // QUEUED | SENT | DELIVERED | FAILED
+  error       String?
+  sentAt      DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([companyId, createdAt])
+}
+
+// ─── Saved custom report definitions ──────────────────────────
+model ReportTemplate {
+  id          String   @id @default(cuid())
+  companyId   String
+  name        String
+  description String?
+  config      Json     // { columns, groupBy, filters, sortBy, sortDir, payrunType, periodMode }
+  createdBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company     Company  @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, name])
+}
+
+// ─── Contractor Payroll ───────────────────────────────────────
+model Contractor {
+  id              String   @id @default(cuid())
+  companyId       String
+  contractorCode  String
+  name            String   // individual or firm name
+  contactPerson   String?  // if firm
+  email           String
+  phone           String
+  // Tax / legal
+  pan             String
+  gstin           String?
+  entityType      String   @default("INDIVIDUAL") // INDIVIDUAL | HUF | FIRM | COMPANY | LLP
+  // TDS section applied to this contractor by default
+  tdsSection      String   @default("194C") // 194C | 194J | 194H | 194I | NONE
+  // Lower / nil deduction certificate (Sec 197)
+  lowerTdsRate    Float?   // overrides default rate if certificate present
+  lowerTdsCertNo  String?
+  lowerTdsValidTo DateTime?
+  // Bank details
+  bankName        String?
+  accountNumber   String?
+  ifscCode        String?
+  // Address
+  addressLine1    String?
+  city            String?
+  state           String?
+  pincode         String?
+  // Engagement
+  engagementStart DateTime?
+  engagementEnd   DateTime?
+  status          String   @default("ACTIVE") // ACTIVE | INACTIVE
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  company         Company             @relation(fields: [companyId], references: [id])
+  payments        ContractorPayment[]
+  form16As        ContractorForm16A[]
+
+  @@unique([contractorCode, companyId])
+  @@index([companyId, status])
+}
+
+model ContractorPayrun {
+  id              String   @id @default(cuid())
+  companyId       String
+  month           Int
+  year            Int
+  status          String   @default("DRAFT") // DRAFT → PENDING_APPROVAL → APPROVED → PAID | CANCELLED
+  totalContractors Int     @default(0)
+  totalGross      Float    @default(0)
+  totalTDS        Float    @default(0)
+  totalNet        Float    @default(0)
+  createdBy       String
+  approvedBy      String?
+  approvedAt      DateTime?
+  payDate         DateTime?
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  company         Company             @relation(fields: [companyId], references: [id])
+  payments        ContractorPayment[]
+
+  @@unique([companyId, month, year])
+}
+
+model ContractorPayment {
+  id                 String   @id @default(cuid())
+  contractorPayrunId String?
+  contractorId       String
+  companyId          String
+  financialYear      String
+  quarter            Int      // 1-4
+  invoiceNumber      String?
+  invoiceDate        DateTime? @db.Date
+  description        String?
+  // Amounts
+  grossAmount        Float
+  tdsSection         String   // section actually applied
+  tdsRate            Float    // rate applied (%)
+  tdsAmount          Float
+  netAmount          Float
+  gstAmount          Float    @default(0)
+  // Payment tracking
+  status             String   @default("PENDING") // PENDING | APPROVED | PAID
+  paidAt             DateTime?
+  utr                String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  contractor         Contractor        @relation(fields: [contractorId], references: [id])
+  payrun             ContractorPayrun? @relation(fields: [contractorPayrunId], references: [id])
+
+  @@index([companyId, financialYear, quarter])
+  @@index([contractorId, financialYear])
+}
+
+model ContractorForm16A {
+  id              String   @id @default(cuid())
+  contractorId    String
+  companyId       String
+  financialYear   String
+  quarter         Int      // Form 16A is quarterly
+  totalPaid       Float    @default(0)
+  totalTDS        Float    @default(0)
+  tdsSection      String
+  certificateNo   String?  // TRACES certificate number
+  status          String   @default("DRAFT") // DRAFT | ISSUED | ESIGNED
+  issuedAt        DateTime?
+  eSignedAt       DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  contractor      Contractor @relation(fields: [contractorId], references: [id])
+
+  @@unique([contractorId, financialYear, quarter])
+}
+
+// ─── Third-party Integrations ─────────────────────────────────
+model Integration {
+  id            String   @id @default(cuid())
+  companyId     String
+  // provider key, e.g. ZOHO_PEOPLE | DARWINBOX | TALLY | QUICKBOOKS | ZOHO_BOOKS | ZKTECO | ESSL | TRACES | DIGILOCKER | ESIGN
+  provider      String
+  category      String   // HRMS | ACCOUNTING | BIOMETRIC | TAX | ESIGN
+  displayName   String
+  status        String   @default("DISCONNECTED") // DISCONNECTED | CONNECTED | ERROR
+  // Encrypted-at-rest credentials/config (API keys, endpoints, device IPs). Stored as JSON.
+  config        Json?
+  // sync behaviour
+  autoSync      Boolean  @default(false)
+  syncFrequency String   @default("MANUAL") // MANUAL | HOURLY | DAILY | WEEKLY
+  lastSyncAt    DateTime?
+  lastSyncStatus String? // SUCCESS | FAILED | PARTIAL
+  lastSyncError String?
+  createdBy     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  company       Company        @relation(fields: [companyId], references: [id])
+  syncLogs      IntegrationSyncLog[]
+
+  @@unique([companyId, provider])
+  @@index([companyId, category])
+}
+
+model IntegrationSyncLog {
+  id             String   @id @default(cuid())
+  integrationId  String
+  companyId      String
+  direction      String   // INBOUND | OUTBOUND
+  operation      String   // e.g. EMPLOYEE_PULL | ATTENDANCE_PULL | JOURNAL_PUSH | FORM16_FETCH | ESIGN_REQUEST
+  status         String   @default("RUNNING") // RUNNING | SUCCESS | FAILED | PARTIAL
+  recordsTotal   Int      @default(0)
+  recordsOk      Int      @default(0)
+  recordsFailed  Int      @default(0)
+  message        String?
+  payload        Json?    // request/response summary or error detail
+  startedAt      DateTime @default(now())
+  finishedAt     DateTime?
+
+  integration    Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, startedAt])
+  @@index([integrationId, startedAt])
+}
