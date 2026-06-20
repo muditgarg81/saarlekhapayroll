@@ -9,3 +9,5 @@ dist
 .claude
 .agents
 ~$*
+apps/api/src/generated/
+
