@@ -14,7 +14,22 @@ export default async (req: any, res: any) => {
       app = await NestFactory.create(AppModule, new ExpressAdapter(server));
       app.setGlobalPrefix('api');
       app.enableCors({
-        origin: process.env.FRONTEND_URL ? process.env.FRONTEND_URL.split(',') : true,
+        origin: (origin: string, callback: any) => {
+          const allowedOrigins = process.env.FRONTEND_URL
+            ? process.env.FRONTEND_URL.split(',')
+            : [];
+          if (
+            !origin ||
+            origin.startsWith('http://localhost:') ||
+            origin.startsWith('https://localhost:') ||
+            origin.endsWith('.vercel.app') ||
+            allowedOrigins.includes(origin)
+          ) {
+            callback(null, true);
+          } else {
+            callback(new Error('Not allowed by CORS'));
+          }
+        },
         credentials: true,
       });
       app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
