@@ -1,14 +1,15 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import Anthropic from '@anthropic-ai/sdk';
+import { GoogleGenAI } from '@google/genai';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditService } from '../audit/audit.service';
 
-const DEFAULT_MODEL = 'claude-sonnet-4-6';
+const DEFAULT_MODEL = 'gemini-2.5-flash';
+const NOT_CONFIGURED = 'AI is not configured. Set GEMINI_API_KEY in the API environment to enable AI features.';
 
 @Injectable()
 export class AiService {
-  private client: Anthropic | null = null;
+  private client: GoogleGenAI | null = null;
   private model: string;
 
   constructor(
@@ -16,27 +17,24 @@ export class AiService {
     private audit: AuditService,
     private config: ConfigService,
   ) {
-    const apiKey = this.config.get<string>('ANTHROPIC_API_KEY');
+    const apiKey = this.config.get<string>('GEMINI_API_KEY') || this.config.get<string>('GOOGLE_API_KEY');
     this.model = this.config.get<string>('AI_MODEL') || DEFAULT_MODEL;
-    if (apiKey) this.client = new Anthropic({ apiKey });
+    if (apiKey) this.client = new GoogleGenAI({ apiKey });
   }
 
   isConfigured() {
-    return { configured: !!this.client, model: this.model };
+    return { configured: !!this.client, model: this.model, provider: 'gemini' };
   }
 
   // ── Low-level LLM helper ──────────────────────────────────────────────────
   private async _ask(system: string, userText: string, maxTokens = 1024): Promise<string> {
-    if (!this.client) {
-      throw new BadRequestException('AI is not configured. Set ANTHROPIC_API_KEY in the API environment to enable AI features.');
-    }
-    const resp = await this.client.messages.create({
+    if (!this.client) throw new BadRequestException(NOT_CONFIGURED);
+    const resp = await this.client.models.generateContent({
       model: this.model,
-      max_tokens: maxTokens,
-      system,
-      messages: [{ role: 'user', content: userText }],
+      contents: userText,
+      config: { systemInstruction: system, maxOutputTokens: maxTokens },
     });
-    return resp.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('').trim();
+    return (resp.text ?? '').trim();
   }
 
   private fmt(n: number) { return `₹${Math.round(n ?? 0).toLocaleString('en-IN')}`; }
@@ -259,7 +257,7 @@ export class AiService {
 
   // ── 4. Employee FAQ chatbot ────────────────────────────────────────────────
   async chat(companyId: string, employeeId: string | null, history: { role: 'user' | 'assistant'; content: string }[]) {
-    if (!this.client) throw new BadRequestException('AI is not configured. Set ANTHROPIC_API_KEY to enable the chatbot.');
+    if (!this.client) throw new BadRequestException(NOT_CONFIGURED);
     if (!history?.length) throw new BadRequestException('No message provided');
 
     // ground with the employee's own snapshot (if linked)
@@ -290,13 +288,17 @@ export class AiService {
       personal ? `\nEmployee context: ${personal}` : '\nNo personal data is linked to this user.',
     ].join('\n');
 
-    const resp = await this.client.messages.create({
+    // Gemini multi-turn: roles are 'user' and 'model'; history must start with a user turn.
+    const contents = history
+      .map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }));
+    while (contents.length && contents[0].role !== 'user') contents.shift();
+
+    const resp = await this.client.models.generateContent({
       model: this.model,
-      max_tokens: 800,
-      system,
-      messages: history.map(m => ({ role: m.role, content: m.content })),
+      contents,
+      config: { systemInstruction: system, maxOutputTokens: 800 },
     });
-    const reply = resp.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('').trim();
+    const reply = (resp.text ?? '').trim();
     return { reply, model: this.model };
   }
 }

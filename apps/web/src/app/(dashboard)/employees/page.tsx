@@ -454,11 +454,11 @@ function BulkImportModal({ onClose, onSuccess }: { onClose: () => void; onSucces
 
   const handleDownloadTemplate = () => {
     const headers = [
-      'firstName', 'lastName', 'email', 'phone', 'dateOfBirth', 'gender', 'pan', 'designation',
+      'firstName', 'lastName', 'email', 'phone', 'dateOfBirth', 'gender', 'pan', 'designation', 'department',
       'ctc', 'dateOfJoining', 'addressLine1', 'city', 'state', 'pincode', 'bankName', 'accountNumber', 'ifscCode'
     ];
     const sample = [
-      'Priya', 'Sharma', 'priya.sharma@example.com', '9876543210', '1992-08-15', 'FEMALE', 'ABCDE1234F', 'Senior Software Engineer',
+      'Priya', 'Sharma', 'priya.sharma@example.com', '9876543210', '1992-08-15', 'FEMALE', 'ABCDE1234F', 'Senior Software Engineer', 'Engineering',
       '1200000', '2024-06-01', 'Flat 402, Sunshine Apts', 'Mumbai', 'Maharashtra', '400001', 'HDFC Bank', '123456789012', 'HDFC0000123'
     ];
     const csvContent = "data:text/csv;charset=utf-8," 
@@ -499,6 +499,15 @@ function BulkImportModal({ onClose, onSuccess }: { onClose: () => void; onSucces
         headers.forEach((header, index) => {
           record[header.trim()] = values[index]?.trim() || '';
         });
+
+        // Resolve department name to departmentId if present in CSV
+        if (record.department) {
+          const deptName = record.department.trim().toLowerCase();
+          const foundDept = (departments as any[]).find(d => d.name.toLowerCase() === deptName);
+          if (foundDept) {
+            record.departmentId = foundDept.id;
+          }
+        }
 
         // Set default values if not specified in CSV
         if (!record.salaryStructureId && defaultStructureId) {
@@ -602,8 +611,8 @@ function BulkImportModal({ onClose, onSuccess }: { onClose: () => void; onSucces
                 <div className="text-xs text-blue-800 space-y-1">
                   <p className="font-semibold">CSV Formatting Rules:</p>
                   <ul className="list-disc pl-4 space-y-0.5">
-                    <li>Required columns: <code>firstName, lastName, email, phone, dateOfBirth (YYYY-MM-DD), gender (MALE/FEMALE), pan, designation, ctc, dateOfJoining (YYYY-MM-DD), addressLine1, city, state, pincode, bankName, accountNumber, ifscCode</code></li>
-                    <li>Referential IDs (<code>salaryStructureId, departmentId, branchId</code>) can be omitted and will default to the selections below.</li>
+                    <li>Required columns: <code>firstName, lastName, email, phone, dateOfBirth (YYYY-MM-DD), gender (MALE/FEMALE), pan, designation, department (name), ctc, dateOfJoining (YYYY-MM-DD), addressLine1, city, state, pincode, bankName, accountNumber, ifscCode</code></li>
+                    <li>Department (<code>department</code>) name can be provided directly. Referential IDs (<code>salaryStructureId, departmentId, branchId</code>) can be omitted and will default to the selections below.</li>
                   </ul>
                 </div>
                 <button onClick={handleDownloadTemplate} className="btn-secondary text-xs flex-shrink-0">

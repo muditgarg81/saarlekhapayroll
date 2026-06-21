@@ -11,7 +11,7 @@ function NotConfigured() {
   return (
     <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800 mb-4">
       <p className="font-semibold mb-1">⚠️ AI not configured</p>
-      <p>Set <code className="bg-amber-100 px-1 rounded">ANTHROPIC_API_KEY</code> in the API environment to enable natural-language queries and the chatbot. Anomaly detection and tax tips work without it.</p>
+      <p>Set <code className="bg-amber-100 px-1 rounded">GEMINI_API_KEY</code> in the API environment to enable natural-language queries and the chatbot. Anomaly detection and tax tips work without it.</p>
     </div>
   );
 }
@@ -278,7 +278,7 @@ export default function AiPage() {
           <p className="text-sm text-gray-500 mt-1">Natural-language queries, anomaly detection, tax tips, and an employee chatbot</p>
         </div>
         <span className={`text-xs px-2 py-1 rounded-full font-medium ${configured ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-          {configured ? `● ${(status as any)?.model || 'Claude'}` : '○ AI offline'}
+          {configured ? `● ${(status as any)?.model || 'Gemini'}` : '○ AI offline'}
         </span>
       </div>
 

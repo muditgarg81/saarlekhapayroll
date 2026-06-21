@@ -171,6 +171,22 @@ export class EmployeesService {
     for (let i = 0; i < records.length; i++) {
       const record = records[i];
       try {
+        // Resolve department name to departmentId if provided
+        if (record.department && !record.departmentId) {
+          const deptName = record.department.trim();
+          const dept = await this.prisma.department.findFirst({
+            where: {
+              name: { equals: deptName, mode: 'insensitive' },
+              companyId,
+            },
+          });
+          if (dept) {
+            record.departmentId = dept.id;
+          } else {
+            throw new BadRequestException(`Department "${deptName}" not found`);
+          }
+        }
+
         if (!record.firstName || !record.lastName || !record.email || !record.pan || !record.designation || !record.salaryStructureId || !record.departmentId || !record.dateOfBirth || !record.dateOfJoining || record.ctc === undefined || !record.addressLine1 || !record.city || !record.state || !record.pincode || !record.bankName || !record.accountNumber || !record.ifscCode) {
           throw new BadRequestException('Missing required fields');
         }
