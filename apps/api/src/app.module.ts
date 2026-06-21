@@ -19,6 +19,8 @@ import { ContractorModule } from './modules/contractor/contractor.module';
 import { IntegrationsModule } from './modules/integrations/integrations.module';
 import { AiModule } from './modules/ai/ai.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { LoansModule } from './modules/loans/loans.module';
+import { CompensationModule } from './modules/compensation/compensation.module';
 import { DatabaseModule } from './database/database.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { UsersModule } from './modules/users/users.module';
