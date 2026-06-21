@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { useAuthStore } from '@/stores/auth.store';
@@ -7,19 +7,15 @@ import { useAuthStore } from '@/stores/auth.store';
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const token = useAuthStore(s => s.token);
-  const [mounted, setMounted] = useState(false);
+  const _hasHydrated = useAuthStore(s => s._hasHydrated);
 
   useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
-    if (mounted && !token) {
+    if (_hasHydrated && !token) {
       router.push('/login');
     }
-  }, [mounted, token, router]);
+  }, [_hasHydrated, token, router]);
 
-  if (!mounted || !token) {
+  if (!_hasHydrated || !token) {
     return null;
   }
 

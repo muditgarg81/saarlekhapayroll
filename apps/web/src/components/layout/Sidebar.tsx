@@ -10,6 +10,8 @@ const navItems = [
   { href: '/payrun', label: 'Payrun', icon: '💸' },
   { href: '/payslips', label: 'Payslips', icon: '🧾' },
   { href: '/contractor', label: 'Contractors', icon: '💼' },
+  { href: '/loans', label: 'Loans', icon: '💵' },
+  { href: '/compensation', label: 'Compensation', icon: '📈' },
   { href: '/salary', label: 'Salary Setup', icon: '⚙️' },
   { href: '/leave', label: 'Leave', icon: '📅' },
   { href: '/attendance', label: 'Attendance', icon: '⏰' },

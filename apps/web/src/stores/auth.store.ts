@@ -15,6 +15,8 @@ interface User {
 interface AuthState {
   user: User | null;
   token: string | null;
+  _hasHydrated: boolean;
+  setHasHydrated: (state: boolean) => void;
   setAuth: (user: User, token: string) => void;
   logout: () => void;
   isAdmin: () => boolean;
@@ -26,6 +28,8 @@ export const useAuthStore = create<AuthState>()(
     (set, get) => ({
       user: null,
       token: null,
+      _hasHydrated: false,
+      setHasHydrated: (state) => set({ _hasHydrated: state }),
       setAuth: (user, token) => {
         localStorage.setItem('access_token', token);
         set({ user, token });
@@ -37,6 +41,12 @@ export const useAuthStore = create<AuthState>()(
       isAdmin: () => ['SUPER_ADMIN', 'ADMIN'].includes(get().user?.role || ''),
       isHR: () => ['SUPER_ADMIN', 'ADMIN', 'HR_MANAGER'].includes(get().user?.role || ''),
     }),
-    { name: 'saarlekha-auth', partialize: state => ({ user: state.user, token: state.token }) },
+    {
+      name: 'saarlekha-auth',
+      partialize: state => ({ user: state.user, token: state.token }),
+      onRehydrateStorage: () => (state) => {
+        state?.setHasHydrated(true);
+      },
+    },
   ),
 );
