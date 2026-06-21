@@ -191,9 +191,18 @@ export class IntegrationsService {
       case 'ZOHO_PEOPLE:LEAVE_PULL':
         return { total: 0, ok: 0, failed: 0, message: 'Leave pull queued — no new records' };
 
-      case 'DARWINBOX:ATTENDANCE_PULL':
       case 'ZKTECO:ATTENDANCE_PULL':
-      case 'ESSL:ATTENDANCE_PULL':
+      case 'ESSL:ATTENDANCE_PULL': {
+        // Devices push punches to the public iClock webhook; report what's landed this month.
+        const now = new Date();
+        const from = new Date(now.getFullYear(), now.getMonth(), 1);
+        const to   = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+        const punches = await this.prisma.attendance.count({ where: { employee: { companyId }, source: 'BIOMETRIC', date: { gte: from, lt: to } } });
+        return { total: punches, ok: punches, failed: 0, message: punches > 0
+          ? `${punches} biometric attendance day(s) received this month via device push. Use the device endpoint or manual upload to ingest more.`
+          : 'No biometric punches yet this month. Configure the device push URL (shown in this integration) or use Manual Punch Upload.' };
+      }
+      case 'DARWINBOX:ATTENDANCE_PULL':
         return { total: 0, ok: 0, failed: 0, message: 'Attendance pull queued — connect device push feed to receive punches' };
 
       // TRACES / TDS

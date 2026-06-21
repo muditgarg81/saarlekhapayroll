@@ -1,10 +1,14 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import { text } from 'express';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
+  // Biometric devices (ZKTeco/eSSL iClock push) POST tab-separated text bodies.
+  app.use('/api/biometric', text({ type: '*/*', limit: '5mb' }));
 
   app.setGlobalPrefix('api');
   app.enableCors({

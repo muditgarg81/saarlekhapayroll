@@ -4,13 +4,17 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { IntegrationsService } from './integrations.service';
+import { BiometricService } from './biometric.service';
 
 @ApiTags('Integrations')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('integrations')
 export class IntegrationsController {
-  constructor(private integrationsService: IntegrationsService) {}
+  constructor(
+    private integrationsService: IntegrationsService,
+    private biometric: BiometricService,
+  ) {}
 
   @Get('catalog')
   catalog() {
@@ -49,5 +53,21 @@ export class IntegrationsController {
   @Get('logs')
   logs(@Request() req: any, @Query('provider') provider?: string) {
     return this.integrationsService.getSyncLogs(req.user.companyId, provider);
+  }
+
+  // ── Biometric ─────────────────────────────────────────────
+  @Get(':provider/device-endpoint')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER')
+  deviceEndpoint(@Param('provider') provider: string, @Request() req: any) {
+    const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0];
+    const host = req.headers['x-forwarded-host'] || req.get('host');
+    const baseUrl = process.env.API_PUBLIC_URL || `${proto}://${host}`;
+    return this.biometric.getDeviceEndpoint(req.user.companyId, provider, baseUrl);
+  }
+
+  @Post(':provider/punch-upload')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER')
+  punchUpload(@Param('provider') provider: string, @Request() req: any, @Body() body: { content: string }) {
+    return this.biometric.manualUpload(req.user.companyId, req.user.sub, provider, body.content);
   }
 }

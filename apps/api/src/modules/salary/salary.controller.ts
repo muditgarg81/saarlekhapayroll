@@ -68,7 +68,7 @@ export class SalaryController {
 
   // ── Simulator ─────────────────────────────────────────────
   @Post('simulate')
-  simulate(@Request() req: any, @Body() body: { structureId: string; ctc: number }) {
+  simulate(@Request() req: any, @Body() body: { structureId: string; ctc: number; state?: string; month?: number }) {
     return this.salaryService.simulate(req.user.companyId, body);
   }
 }

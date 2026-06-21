@@ -58,8 +58,20 @@ export class PayrollEngine {
     const earnings: CalculatedPayslip['earnings'] = [];
     const deductions: CalculatedPayslip['deductions'] = [];
 
+    // Fetch PF config early to support dynamic PF_EMPLOYER calculation during the earnings loop
+    const pfConfig = await this.compliance.getPFConfig(employee.companyId);
+
     for (const sc of employee.salaryStructure.components) {
       const comp = sc.component;
+
+      // Calculate PF_EMPLOYER dynamically if BASIC is resolved and PF_EMPLOYER is not set yet
+      if (context['BASIC'] && !context['PF_EMPLOYER']) {
+        const basic = context['BASIC'];
+        const pfWage = Math.min(basic, pfConfig.wageLimit);
+        context['PF_EMPLOYER'] = Math.round((pfWage * (pfConfig.employerEPFRate + pfConfig.employerEPSRate)) / 100);
+        context['PF_EMPLOYEE'] = Math.round((pfWage * pfConfig.employeeContributionRate) / 100);
+      }
+
       let amount = this.resolveComponent(comp, context, monthlyCTC);
       // Apply LOP for non-statutory earnings
       if (comp.type === 'EARNING' && !comp.isStatutory) {
@@ -77,12 +89,13 @@ export class PayrollEngine {
     context['GROSS'] = grossEarnings;
 
     // PF calculation
-    const pfConfig = await this.compliance.getPFConfig(employee.companyId);
-    const pfWage = Math.min(context['BASIC'] || 0, pfConfig.wageLimit);
-    const pfEmployee = Math.round((pfWage * pfConfig.employeeContributionRate) / 100);
-    const pfEmployer = Math.round((pfWage * (pfConfig.employerEPFRate + pfConfig.employerEPSRate)) / 100);
-    context['PF_EMPLOYEE'] = pfEmployee;
-    context['PF_EMPLOYER'] = pfEmployer;
+    if (context['PF_EMPLOYEE'] === undefined) {
+      const pfWage = Math.min(context['BASIC'] || 0, pfConfig.wageLimit);
+      const pfEmployee = Math.round((pfWage * pfConfig.employeeContributionRate) / 100);
+      const pfEmployer = Math.round((pfWage * (pfConfig.employerEPFRate + pfConfig.employerEPSRate)) / 100);
+      context['PF_EMPLOYEE'] = pfEmployee;
+      context['PF_EMPLOYER'] = pfEmployer;
+    }
 
     // ESI calculation
     const esiConfig = await this.compliance.getESIConfig(employee.companyId);

@@ -1,7 +1,8 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { salaryApi } from '@/lib/api';
+import { salaryApi, companyApi } from '@/lib/api';
+import { INDIA_STATES, MONTHS } from '@saarlekha/shared';
 
 type Tab = 'components' | 'structures' | 'simulator';
 
@@ -472,10 +473,18 @@ function StructureForm({ initial, onClose, onSuccess }: { initial: any; onClose:
 function SimulatorTab() {
   const [structureId, setStructureId] = useState('');
   const [ctc, setCtc] = useState('');
+  const [state, setState] = useState('');
+  const [month, setMonth] = useState<string>('');
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState('');
 
   const { data: structures = [] } = useQuery({ queryKey: ['salary-structures'], queryFn: salaryApi.structures });
+  const { data: company } = useQuery({ queryKey: ['company'], queryFn: () => companyApi.get() as any });
+
+  // Default the state dropdown to the company's registered state.
+  useEffect(() => {
+    if (!state && (company as any)?.state) setState((company as any).state);
+  }, [company, state]);
 
   const simulateMutation = useMutation({
     mutationFn: (data: any) => salaryApi.simulate(data),
@@ -487,7 +496,7 @@ function SimulatorTab() {
     setError('');
     setResult(null);
     if (!structureId || !ctc) { setError('Select a template and enter CTC'); return; }
-    simulateMutation.mutate({ structureId, ctc: Number(ctc) });
+    simulateMutation.mutate({ structureId, ctc: Number(ctc), state: state || undefined, month: month ? Number(month) : undefined });
   };
 
   const fmt = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
@@ -508,6 +517,20 @@ function SimulatorTab() {
             <label className="block text-sm font-medium text-gray-700 mb-1">Annual CTC (₹)</label>
             <input type="number" className="input" value={ctc} onChange={e => setCtc(e.target.value)}
               placeholder="e.g. 600000" min={0} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">State <span className="text-gray-400 font-normal">(drives PT & LWF)</span></label>
+            <select className="input" value={state} onChange={e => setState(e.target.value)}>
+              <option value="">Select state</option>
+              {INDIA_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Month <span className="text-gray-400 font-normal">(optional — PT Feb / LWF cycle)</span></label>
+            <select className="input" value={month} onChange={e => setMonth(e.target.value)}>
+              <option value="">Any month</option>
+              {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+            </select>
           </div>
         </div>
         {error && <p className="mt-3 text-sm text-red-600">{error}</p>}

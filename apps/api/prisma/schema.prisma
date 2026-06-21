@@ -148,6 +148,7 @@ model Employee {
   aadhaar          String?
   uan              String?  // UAN for PF
   esiNumber        String?
+  biometricCode    String?  // enrollment/user-id on biometric devices (ZKTeco/eSSL)
   designation      String
   grade            String?  // e.g. L1, L2, M1, M2 — pay-band / seniority grade
   departmentId     String

@@ -240,6 +240,8 @@ export const integrationsApi = {
   test:        (provider: string)                        => api.post(`/integrations/${provider}/test`),
   sync:        (provider: string, operation: string)     => api.post(`/integrations/${provider}/sync`, { operation }),
   logs:        (provider?: string)                       => api.get('/integrations/logs', { params: provider ? { provider } : {} }),
+  deviceEndpoint: (provider: string)                     => api.get(`/integrations/${provider}/device-endpoint`),
+  punchUpload: (provider: string, content: string)       => api.post(`/integrations/${provider}/punch-upload`, { content }),
 };
 
 // Contractor Payroll

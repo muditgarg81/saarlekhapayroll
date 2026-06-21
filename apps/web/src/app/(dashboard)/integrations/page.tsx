@@ -44,6 +44,16 @@ function ConnectDrawer({ item, onClose }: { item: any; onClose: () => void }) {
   const disconnectMut = useMutation({ mutationFn: () => integrationsApi.disconnect(item.provider), onSuccess: () => { invalidate(); onClose(); } });
 
   const connected = item.status === 'CONNECTED';
+  const isBiometric = item.category === 'BIOMETRIC';
+
+  const [punchText, setPunchText] = useState('');
+  const { data: endpoint } = useQuery({
+    queryKey: ['device-endpoint', item.provider],
+    queryFn: () => integrationsApi.deviceEndpoint(item.provider) as any,
+    enabled: isBiometric && connected,
+  });
+  const uploadMut = useMutation({ mutationFn: () => integrationsApi.punchUpload(item.provider, punchText), onSuccess: () => invalidate() });
+  const [copied, setCopied] = useState(false);
 
   return (
     <div className="fixed inset-0 bg-black/40 flex justify-end z-50" onClick={onClose}>
@@ -135,6 +145,52 @@ function ConnectDrawer({ item, onClose }: { item: any; onClose: () => void }) {
               <div className="mt-2 p-3 bg-gray-50 rounded-lg text-xs text-gray-600">
                 <span className={`px-1.5 py-0.5 rounded font-medium ${syncBadge[(syncMut.data as any).status] || ''}`}>{(syncMut.data as any).status}</span>
                 <span className="ml-2">{(syncMut.data as any).message}</span>
+              </div>
+            )}
+
+            {/* Biometric: device push endpoint + manual punch upload */}
+            {isBiometric && (
+              <div className="mt-5 border-t border-gray-100 pt-4 space-y-4">
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 mb-1">Device Push Endpoint (iClock / ADMS)</p>
+                  <p className="text-[11px] text-gray-400 mb-2">Configure this URL as the server on your ZKTeco/eSSL device. The device serial (SN) must match.</p>
+                  <div className="flex gap-2">
+                    <input readOnly value={endpoint?.pushUrl || 'Loading…'} className="flex-1 border border-gray-300 rounded-lg px-2 py-1.5 text-[11px] font-mono bg-gray-50" />
+                    <button
+                      onClick={() => { if (endpoint?.pushUrl) { navigator.clipboard.writeText(endpoint.pushUrl); setCopied(true); setTimeout(() => setCopied(false), 1500); } }}
+                      className="px-2.5 py-1.5 text-xs border border-gray-300 rounded-lg hover:bg-gray-50">{copied ? '✓' : 'Copy'}</button>
+                  </div>
+                  {endpoint?.instructions && (
+                    <ul className="mt-2 text-[11px] text-gray-500 list-disc list-inside space-y-0.5">
+                      {endpoint.instructions.map((s: string, i: number) => <li key={i}>{s}</li>)}
+                    </ul>
+                  )}
+                </div>
+
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 mb-1">Manual Punch Upload</p>
+                  <p className="text-[11px] text-gray-400 mb-2">Paste device ATTLOG / CSV rows: <code>userId&nbsp;&lt;tab&gt;&nbsp;YYYY-MM-DD HH:mm:ss</code> (one per line). Matched to employees by Biometric Code or Employee Code.</p>
+                  <textarea
+                    value={punchText}
+                    onChange={e => setPunchText(e.target.value)}
+                    rows={5}
+                    placeholder={'1001\t2026-06-21 09:05:00\n1001\t2026-06-21 18:30:00\n1002\t2026-06-21 09:15:00'}
+                    className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-[11px] font-mono"
+                  />
+                  <button onClick={() => uploadMut.mutate()} disabled={uploadMut.isPending || !punchText.trim()} className="mt-2 w-full px-3 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">
+                    {uploadMut.isPending ? 'Ingesting…' : 'Ingest Punches'}
+                  </button>
+                  {uploadMut.isError && <p className="mt-2 text-xs text-red-600">{(uploadMut.error as any)?.message || 'Upload failed'}</p>}
+                  {uploadMut.data && (
+                    <div className="mt-2 p-3 bg-green-50 rounded-lg text-xs text-green-800">
+                      <span className={`px-1.5 py-0.5 rounded font-medium ${syncBadge[(uploadMut.data as any).status] || ''}`}>{(uploadMut.data as any).status}</span>
+                      <span className="ml-2">{(uploadMut.data as any).daysWritten} day(s) written for {(uploadMut.data as any).employeesAffected} employee(s) from {(uploadMut.data as any).matchedPunches}/{(uploadMut.data as any).totalPunches} punches.</span>
+                      {(uploadMut.data as any).unmatchedUserIds?.length > 0 && (
+                        <p className="mt-1 text-amber-700">Unmatched IDs: {(uploadMut.data as any).unmatchedUserIds.join(', ')}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 

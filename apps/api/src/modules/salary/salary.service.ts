@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
-import { DEFAULT_SALARY_COMPONENTS } from '@saarlekha/shared';
+import { DEFAULT_SALARY_COMPONENTS, PT_SLABS, MAHARASHTRA_FEB_EXTRA, LWF_RATES } from '@saarlekha/shared';
 
 @Injectable()
 export class SalaryService {
@@ -107,13 +107,45 @@ export class SalaryService {
     return this.prisma.salaryStructure.update({ where: { id }, data: { isActive: false } });
   }
 
+  // ── Statutory helpers ─────────────────────────────────────────────────────
+  /** Professional Tax for a state at a given monthly gross (Maharashtra Feb +₹100 rule). */
+  private calcPT(state: string | undefined, monthlyGross: number, month?: number): number {
+    if (!state) return 0;
+    const slabs = PT_SLABS[state];
+    if (!slabs || slabs.length === 0) return 0;
+    const slab = slabs.find(s => monthlyGross <= s.upTo);
+    let tax = slab ? slab.tax : slabs[slabs.length - 1].tax;
+    if (state === 'Maharashtra' && month === 2 && tax === 200) tax += MAHARASHTRA_FEB_EXTRA;
+    return tax;
+  }
+
+  /** Labour Welfare Fund employee contribution + its deduction frequency for a state. */
+  private calcLWF(state: string | undefined, month?: number): { amount: number; frequency: string; applies: boolean } {
+    if (!state) return { amount: 0, frequency: '', applies: false };
+    const r = LWF_RATES[state];
+    if (!r) return { amount: 0, frequency: '', applies: false };
+    let applies = true;
+    if (month) {
+      if (r.frequency === 'JUNE_DEC') applies = month === 6 || month === 12;
+      else if (r.frequency === 'ANNUAL') applies = month === 12;
+    }
+    return { amount: r.employee, frequency: r.frequency, applies };
+  }
+
   // ── Salary Simulator ──────────────────────────────────────────────────────
-  async simulate(companyId: string, dto: { structureId: string; ctc: number }) {
+  async simulate(companyId: string, dto: { structureId: string; ctc: number; state?: string; month?: number }) {
     const structure = await this.prisma.salaryStructure.findUnique({
       where: { id: dto.structureId },
       include: { components: { include: { component: true }, orderBy: { order: 'asc' } } },
     });
     if (!structure || structure.companyId !== companyId) throw new NotFoundException('Structure not found');
+
+    // Default the state to the company's registered state when not supplied.
+    let state = dto.state;
+    if (!state) {
+      const company = await this.prisma.company.findUnique({ where: { id: companyId }, select: { state: true } });
+      state = company?.state;
+    }
 
     const monthlyCTC = dto.ctc / 12;
     const context: Record<string, number> = { CTC: dto.ctc, MONTHLY_CTC: monthlyCTC };
@@ -125,6 +157,15 @@ export class SalaryService {
     for (const sc of structure.components) {
       const comp = sc.component;
       if (comp.type !== 'EARNING') continue;
+
+      // Calculate PF_EMPLOYER dynamically if BASIC is resolved and PF_EMPLOYER is not set yet
+      if (context['BASIC'] && !context['PF_EMPLOYER']) {
+        const basic = context['BASIC'];
+        const pfWage = Math.min(basic, 15000);
+        context['PF_EMPLOYER'] = Math.round(pfWage * 0.1367);
+        context['PF_EMPLOYEE'] = Math.round(pfWage * 0.12);
+      }
+
       const amount = Math.round(this.resolve(comp, context, monthlyCTC));
       context[comp.code] = amount;
       earnings.push({ code: comp.code, name: comp.name, amount, calculationType: comp.calculationType });
@@ -136,11 +177,15 @@ export class SalaryService {
     // Estimate statutory deductions
     const basic = context['BASIC'] || 0;
     const pfWage = Math.min(basic, 15000);
-    context['PF_EMPLOYEE'] = Math.round(pfWage * 0.12);
-    context['PF_EMPLOYER'] = Math.round(pfWage * 0.1367); // EPF 3.67% + EPS 8.33% + EDLI 0.5% + admin
+    if (context['PF_EMPLOYEE'] === undefined) {
+      context['PF_EMPLOYEE'] = Math.round(pfWage * 0.12);
+      context['PF_EMPLOYER'] = Math.round(pfWage * 0.1367); // EPF 3.67% + EPS 8.33% + EDLI 0.5% + admin
+    }
     context['ESI_EMPLOYEE'] = grossEarnings <= 21000 ? Math.round(grossEarnings * 0.0075) : 0;
-    context['PT'] = 0;   // state-specific, unknown without employee state
-    context['LWF'] = 0;  // state-specific
+    // State-driven statutory taxes
+    context['PT'] = this.calcPT(state, grossEarnings, dto.month);
+    const lwf = this.calcLWF(state, dto.month);
+    context['LWF'] = dto.month ? (lwf.applies ? lwf.amount : 0) : lwf.amount;
     context['TDS'] = 0;  // requires full-year income projection
 
     // Resolve non-statutory deductions
@@ -154,15 +199,32 @@ export class SalaryService {
 
     const totalDeductions = deductions.reduce((s, d) => s + d.amount, 0);
 
+    const freqLabel = lwf.frequency === 'MONTHLY' ? 'monthly' : lwf.frequency === 'JUNE_DEC' ? 'in Jun & Dec' : lwf.frequency === 'ANNUAL' ? 'annually' : '';
+    const notes: string[] = [];
+    if (state) {
+      const ptApplicable = PT_SLABS[state] && PT_SLABS[state].length > 0;
+      notes.push(ptApplicable
+        ? `PT computed for ${state}${state === 'Maharashtra' && dto.month === 2 ? ' (Feb ₹300 rule applied)' : ''}`
+        : `${state} does not levy Professional Tax`);
+      if (LWF_RATES[state]) {
+        notes.push(`LWF ₹${LWF_RATES[state].employee} (employee) deducted ${freqLabel} in ${state}` + (dto.month && !lwf.applies ? ' — not due in the selected month' : ''));
+      }
+    } else {
+      notes.push('Select a state to compute PT & LWF');
+    }
+    notes.push('TDS requires full-year projection', 'ESI waived for gross > ₹21,000/month');
+
     return {
       ctc: dto.ctc,
       monthly: monthlyCTC,
+      state,
+      month: dto.month ?? null,
       earnings,
       deductions,
       grossEarnings,
       totalDeductions,
       netPay: Math.max(grossEarnings - totalDeductions, 0),
-      notes: ['PT and LWF depend on employee state', 'TDS requires full-year projection', 'ESI waived for gross > ₹21,000/month'],
+      notes,
     };
   }
 
