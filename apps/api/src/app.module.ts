@@ -50,6 +50,8 @@ import { UsersModule } from './modules/users/users.module';
     IntegrationsModule,
     AiModule,
     NotificationsModule,
+    LoansModule,
+    CompensationModule,
   ],
 })
 export class AppModule {}

@@ -227,6 +227,32 @@ export const tdsApi = {
   markEsigned:      (id: string)                      => api.patch(`/tds/form16/${id}/esign`),
 };
 
+// Loans
+export const loansApi = {
+  list:         (status?: string)                  => api.get('/loans', { params: status ? { status } : {} }),
+  get:          (id: string)                        => api.get(`/loans/${id}`),
+  create:       (data: any)                         => api.post('/loans', data),
+  summary:      ()                                  => api.get('/loans/summary'),
+  perquisite:   (fy: string, projected?: boolean)   => api.get('/loans/perquisite', { params: { fy, projected: projected ? 'true' : undefined } }),
+  postInstallment: (id: string, no: number, payslipId?: string) => api.patch(`/loans/${id}/installments/${no}/post`, { payslipId }),
+  cancel:       (id: string)                        => api.patch(`/loans/${id}/cancel`),
+};
+
+// Compensation (revisions, perquisites, POI, holds)
+export const compensationApi = {
+  revisions:        (employeeId?: string)            => api.get('/compensation/revisions', { params: employeeId ? { employeeId } : {} }),
+  createRevision:   (data: any)                       => api.post('/compensation/revisions', data),
+  perquisites:      (fy: string)                      => api.get('/compensation/perquisites', { params: { fy } }),
+  createPerquisite: (data: any)                       => api.post('/compensation/perquisites', data),
+  deletePerquisite: (id: string)                      => api.delete(`/compensation/perquisites/${id}`),
+  poi:              (params?: any)                    => api.get('/compensation/poi', { params }),
+  submitPoi:        (data: any)                       => api.post('/compensation/poi', data),
+  reviewPoi:        (id: string, data: any)           => api.patch(`/compensation/poi/${id}/review`, data),
+  holds:            (status?: string)                 => api.get('/compensation/holds', { params: status ? { status } : {} }),
+  hold:             (data: any)                       => api.post('/compensation/holds', data),
+  release:          (id: string)                      => api.patch(`/compensation/holds/${id}/release`),
+};
+
 // Notifications
 export const notificationsApi = {
   catalog:            ()                                  => api.get('/notifications/catalog'),
