@@ -71,6 +71,22 @@ function PeriodPicker({ month, year, onChange }: { month: number; year: number; 
   );
 }
 
+function StateFilter({ value, onChange }: { value: string; onChange: (s: string) => void }) {
+  const { data } = useQuery({ queryKey: ['compliance-states'], queryFn: () => complianceApi.states() as any });
+  const d = data as any;
+  const states: string[] = d?.states || [];
+  return (
+    <div className="flex items-center gap-2 mb-5 -mt-2">
+      <span className="text-xs font-medium text-gray-500">State filter:</span>
+      <select className="input w-56" value={value} onChange={e => onChange(e.target.value)}>
+        <option value="">All states</option>
+        {states.map(s => <option key={s} value={s}>{s}{s === d?.companyState ? ' (company)' : ''}</option>)}
+      </select>
+      {value && <button onClick={() => onChange('')} className="text-xs text-gray-400 hover:text-gray-600">clear</button>}
+    </div>
+  );
+}
+
 function SummaryCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-4 text-center">
@@ -232,9 +248,10 @@ function ESITab() {
 function PTTab() {
   const [month, setMonth] = useState(CUR_MONTH);
   const [year,  setYear]  = useState(CUR_YEAR);
+  const [state, setState] = useState('');
   const { data, isLoading } = useQuery({
-    queryKey: ['compliance-pt', month, year],
-    queryFn:  () => complianceApi.pt(month, year),
+    queryKey: ['compliance-pt', month, year, state],
+    queryFn:  () => complianceApi.pt(month, year, state),
   });
   const d = data as any;
 
@@ -242,9 +259,10 @@ function PTTab() {
     <div>
       <div className="mb-2">
         <h2 className="text-lg font-semibold">Professional Tax Register</h2>
-        <p className="text-xs text-gray-500">State-wise PT slabs · Maharashtra Feb: +₹100 · States with no PT show ₹0</p>
+        <p className="text-xs text-gray-500">State-wise PT slabs · Maharashtra Feb: top slab +₹100 (₹200→₹300) · States with no PT show ₹0</p>
       </div>
       <PeriodPicker month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y); }} />
+      <StateFilter value={state} onChange={setState} />
       {isLoading ? <LoadingRow /> : d && (
         <>
           {/* By-state summary */}
@@ -296,9 +314,10 @@ function PTTab() {
 function LWFTab() {
   const [month, setMonth] = useState(CUR_MONTH);
   const [year,  setYear]  = useState(CUR_YEAR);
+  const [state, setState] = useState('');
   const { data, isLoading } = useQuery({
-    queryKey: ['compliance-lwf', month, year],
-    queryFn:  () => complianceApi.lwf(month, year),
+    queryKey: ['compliance-lwf', month, year, state],
+    queryFn:  () => complianceApi.lwf(month, year, state),
   });
   const d = data as any;
 
@@ -309,6 +328,7 @@ function LWFTab() {
         <p className="text-xs text-gray-500">State-wise LWF · Monthly / June+Dec / Annual depending on state · Not applicable in all states</p>
       </div>
       <PeriodPicker month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y); }} />
+      <StateFilter value={state} onChange={setState} />
       {isLoading ? <LoadingRow /> : d && (
         <>
           <div className="grid grid-cols-3 gap-3 mb-5">

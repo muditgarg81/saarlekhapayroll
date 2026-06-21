@@ -1,5 +1,5 @@
 'use client';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { useAuthStore } from '@/stores/auth.store';
@@ -7,12 +7,21 @@ import { useAuthStore } from '@/stores/auth.store';
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const token = useAuthStore(s => s.token);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    if (!token) router.push('/login');
-  }, [token, router]);
+    setMounted(true);
+  }, []);
 
-  if (!token) return null;
+  useEffect(() => {
+    if (mounted && !token) {
+      router.push('/login');
+    }
+  }, [mounted, token, router]);
+
+  if (!mounted || !token) {
+    return null;
+  }
 
   return (
     <div className="flex h-screen overflow-hidden">

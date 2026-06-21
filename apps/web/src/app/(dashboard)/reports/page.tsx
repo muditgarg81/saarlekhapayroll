@@ -34,6 +34,13 @@ function exportCsv(filename: string, headers: string[], rows: (string | number)[
   URL.revokeObjectURL(url);
 }
 
+function downloadText(filename: string, content: string) {
+  const blob = new Blob([content], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
 // ── Salary Register ───────────────────────────────────────────────────────────
 function SalaryRegisterTab() {
   const [month, setMonth] = useState(now.getMonth() + 1);
@@ -202,6 +209,10 @@ function ChallanTab() {
                 <p className={`text-lg font-bold ${c.color || 'text-gray-900'}`}>{c.val}</p>
               </div>
             ))}
+          </div>
+          <div className="flex justify-end mb-2">
+            <button onClick={async () => { const e: any = await reportsApi.ecr(month, year); if (!e.content) return alert('No PF members for this period'); downloadText(e.filename, e.content); }}
+              className="px-3 py-1.5 text-sm border border-indigo-300 text-indigo-600 rounded-lg hover:bg-indigo-50">⬇ Download ECR file (EPFO)</button>
           </div>
           <ChallanTable
             headers={['UAN','Name','PF Wage','Employee 12%','EPF 3.67%','EPS 8.33%','EDLI','Admin','Total']}
@@ -671,8 +682,167 @@ function CustomBuilderTab() {
   );
 }
 
+// ── More Reports ──────────────────────────────────────────────────────────────
+const MORE = [
+  { key: 'liability', label: 'Payroll Liability', period: 'month' },
+  { key: 'annualpt',  label: 'Annual PT',         period: 'fy' },
+  { key: 'encash',    label: 'Leave Encashment',  period: 'fy' },
+  { key: 'variable',  label: 'Variable Pay',      period: 'month' },
+  { key: 'donations', label: 'Donations (80G)',   period: 'fy' },
+] as const;
+
+function MoreReportsTab() {
+  const [report, setReport] = useState<typeof MORE[number]['key']>('liability');
+  const [month, setMonth] = useState(now.getMonth() + 1);
+  const [year, setYear]   = useState(now.getFullYear());
+  const [fy, setFy]       = useState(CUR_FY);
+  const meta = MORE.find(m => m.key === report)!;
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['more-report', report, month, year, fy],
+    queryFn: () => {
+      switch (report) {
+        case 'liability': return reportsApi.payrollLiability(month, year) as any;
+        case 'annualpt':  return reportsApi.annualPt(fy) as any;
+        case 'encash':    return reportsApi.leaveEncashment(fy) as any;
+        case 'variable':  return reportsApi.variablePay(month, year) as any;
+        case 'donations': return reportsApi.donations(fy) as any;
+      }
+    },
+  });
+  const d = data as any;
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <div className="flex gap-1 bg-gray-100 p-0.5 rounded-lg">
+          {MORE.map(m => (
+            <button key={m.key} onClick={() => setReport(m.key)} className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${report === m.key ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500'}`}>{m.label}</button>
+          ))}
+        </div>
+        {meta.period === 'month'
+          ? <MonthPicker {...{ month, year, setMonth, setYear }} />
+          : <select value={fy} onChange={e => setFy(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm">{fyList.map(f => <option key={f} value={f}>FY {f}</option>)}</select>}
+      </div>
+
+      {isLoading ? <div className="text-center py-12 text-gray-400">Loading…</div> : !d ? null : (
+        <>
+          {/* Payroll Liability */}
+          {report === 'liability' && (!d.found ? <Empty period={`${MONTHS[month - 1]} ${year}`} /> : (
+            <div>
+              <div className="grid grid-cols-3 gap-3 mb-4">
+                <Card label="Net Salary Payable" val={fmt(d.netPayable)} />
+                <Card label="Statutory Payable" val={fmt(d.statutoryPayable)} color="text-orange-600" />
+                <Card label="Total Liability" val={fmt(d.totalLiability)} color="text-indigo-600" />
+              </div>
+              <Table headers={['Liability','Category','Pay To','Due Date','Amount']}
+                rows={d.lines.map((l: any) => [l.head, l.category, l.payTo, l.due || '—', fmt(l.payable)])}
+                onExport={() => exportCsv(`payroll-liability-${month}-${year}.csv`, ['Liability','Category','PayTo','Due','Amount'], d.lines.map((l: any) => [l.head, l.category, l.payTo, l.due || '', l.payable]))} />
+            </div>
+          ))}
+
+          {/* Annual PT */}
+          {report === 'annualpt' && (
+            <div className="overflow-x-auto rounded-xl border border-gray-200">
+              <table className="w-full text-xs">
+                <thead className="bg-gray-50"><tr>
+                  <th className="px-3 py-2 text-left font-semibold text-gray-500">Employee</th>
+                  {d.monthLabels.map((m: string) => <th key={m} className="px-2 py-2 text-right font-semibold text-gray-500">{m}</th>)}
+                  <th className="px-3 py-2 text-right font-semibold text-gray-500">Total</th>
+                </tr></thead>
+                <tbody className="divide-y divide-gray-100">
+                  {d.rows.map((r: any) => (
+                    <tr key={r.employeeCode} className="bg-white hover:bg-gray-50">
+                      <td className="px-3 py-2"><span className="font-medium text-gray-900">{r.name}</span> <span className="text-gray-400">{r.state}</span></td>
+                      {r.months.map((v: number, i: number) => <td key={i} className="px-2 py-2 text-right text-gray-600">{v ? v : '—'}</td>)}
+                      <td className="px-3 py-2 text-right font-semibold text-orange-700">{fmt(r.total)}</td>
+                    </tr>
+                  ))}
+                  {!d.rows.length && <tr><td colSpan={14} className="px-3 py-12 text-center text-gray-400">No PT deducted in FY {fy}</td></tr>}
+                </tbody>
+                {d.rows.length > 0 && <tfoot><tr className="bg-gray-100 font-semibold"><td className="px-3 py-2">Grand Total</td><td colSpan={12} /><td className="px-3 py-2 text-right">{fmt(d.grandTotal)}</td></tr></tfoot>}
+              </table>
+            </div>
+          )}
+
+          {/* Leave Encashment */}
+          {report === 'encash' && (
+            <div>
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                <Card label="Total Days Encashed" val={String(d.totals.days)} />
+                <Card label="Total Amount" val={fmt(d.totals.amount)} color="text-green-700" />
+              </div>
+              <Table headers={['Employee','Leave Type','Days','Rate/Day','Amount']}
+                rows={d.rows.map((r: any) => [`${r.name} (${r.employeeCode})`, r.policy, r.daysEncashed, fmt(r.ratePerDay), fmt(r.amount)])}
+                empty="No leave encashment recorded this FY"
+                onExport={() => exportCsv(`leave-encashment-${fy}.csv`, ['Employee','Code','LeaveType','Days','RatePerDay','Amount'], d.rows.map((r: any) => [r.name, r.employeeCode, r.policy, r.daysEncashed, r.ratePerDay, r.amount]))} />
+            </div>
+          )}
+
+          {/* Variable Pay */}
+          {report === 'variable' && (
+            <div className="overflow-x-auto rounded-xl border border-gray-200">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50"><tr>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Employee</th>
+                  {d.components.map((c: string) => <th key={c} className="px-3 py-2 text-right text-xs font-semibold text-gray-500">{c}</th>)}
+                  <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500">Total</th>
+                </tr></thead>
+                <tbody className="divide-y divide-gray-100">
+                  {d.rows.map((r: any) => (
+                    <tr key={r.employeeCode} className="bg-white hover:bg-gray-50">
+                      <td className="px-3 py-2"><span className="font-medium text-gray-900">{r.name}</span> <span className="text-gray-400 text-xs">{r.employeeCode}</span></td>
+                      {d.components.map((c: string) => <td key={c} className="px-3 py-2 text-right text-gray-600">{r.variable[c] ? fmt(r.variable[c]) : '—'}</td>)}
+                      <td className="px-3 py-2 text-right font-semibold text-indigo-700">{fmt(r.total)}</td>
+                    </tr>
+                  ))}
+                  {!d.rows.length && <tr><td colSpan={(d.components?.length || 0) + 2} className="px-3 py-12 text-center text-gray-400">No variable pay for {MONTHS[month - 1]} {year}</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Donations */}
+          {report === 'donations' && (
+            <div>
+              <Card label="Total 80G Donations" val={fmt(d.total)} color="text-green-700" />
+              <div className="mt-4">
+                <Table headers={['Employee','PAN','Regime','Approved','80G Donation']}
+                  rows={d.rows.map((r: any) => [`${r.name} (${r.employeeCode})`, r.pan, r.regime, r.approved ? '✓' : '—', fmt(r.donation80G)])}
+                  empty="No 80G donations declared this FY"
+                  onExport={() => exportCsv(`donations-${fy}.csv`, ['Employee','Code','PAN','Regime','Approved','Donation80G'], d.rows.map((r: any) => [r.name, r.employeeCode, r.pan, r.regime, r.approved, r.donation80G]))} />
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function Card({ label, val, color }: { label: string; val: string; color?: string }) {
+  return <div className="bg-white border border-gray-200 rounded-xl p-4"><p className="text-xs text-gray-500">{label}</p><p className={`text-lg font-bold ${color || 'text-gray-900'}`}>{val}</p></div>;
+}
+function Empty({ period }: { period: string }) { return <div className="text-center py-12 text-gray-400">No approved payrun found for {period}</div>; }
+function Table({ headers, rows, onExport, empty }: { headers: string[]; rows: any[][]; onExport?: () => void; empty?: string }) {
+  return (
+    <div>
+      {onExport && rows.length > 0 && <div className="flex justify-end mb-2"><button onClick={onExport} className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">⬇ Export CSV</button></div>}
+      <div className="overflow-x-auto rounded-xl border border-gray-200">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50"><tr>{headers.map((h, i) => <th key={h} className={`px-4 py-3 text-xs font-semibold text-gray-500 ${i >= headers.length - 1 ? 'text-right' : 'text-left'}`}>{h}</th>)}</tr></thead>
+          <tbody className="divide-y divide-gray-100">
+            {rows.map((r, i) => <tr key={i} className="bg-white hover:bg-gray-50">{r.map((c, j) => <td key={j} className={`px-4 py-3 ${j === 0 ? 'font-medium text-gray-900' : j === r.length - 1 ? 'text-right font-semibold text-gray-900' : 'text-gray-600'}`}>{c}</td>)}</tr>)}
+            {!rows.length && <tr><td colSpan={headers.length} className="px-4 py-12 text-center text-gray-400">{empty || 'No data'}</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
-const TABS = ['Salary Register', 'Department Cost', 'Statutory Challans', 'Year-End Tax', 'Custom Builder'];
+const TABS = ['Salary Register', 'Department Cost', 'Statutory Challans', 'Year-End Tax', 'More Reports', 'Custom Builder'];
 
 export default function ReportsPage() {
   const [tab, setTab] = useState(0);
@@ -694,7 +864,8 @@ export default function ReportsPage() {
         {tab === 1 && <DepartmentCostTab />}
         {tab === 2 && <ChallanTab />}
         {tab === 3 && <YearEndTaxTab />}
-        {tab === 4 && <CustomBuilderTab />}
+        {tab === 4 && <MoreReportsTab />}
+        {tab === 5 && <CustomBuilderTab />}
       </div>
     </div>
   );

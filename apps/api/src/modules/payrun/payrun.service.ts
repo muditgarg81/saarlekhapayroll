@@ -4,6 +4,7 @@ import {
 import { PrismaService } from '../../database/prisma.service';
 import { PayrollEngine } from './payroll-engine.service';
 import { AuditService } from '../audit/audit.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 const CANCELLABLE = ['DRAFT', 'PENDING_REVIEW', 'PENDING_APPROVAL'];
 
@@ -13,6 +14,7 @@ export class PayrunService {
     private prisma: PrismaService,
     private engine: PayrollEngine,
     private audit: AuditService,
+    private notifications: NotificationsService,
   ) {}
 
   // ── Create ────────────────────────────────────────────────
@@ -162,6 +164,8 @@ export class PayrunService {
       },
     });
     await this.audit.log(reviewerId, companyId, 'APPROVE', 'Payrun', payrunId, 'Payrun reviewed — sent for approval');
+    // Notify approvers (fire-and-forget; never blocks the payrun flow)
+    this.notifications.notifyApprovalRequest(companyId, reviewerId, payrunId).catch(() => {});
     return updated;
   }
 

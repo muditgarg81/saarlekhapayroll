@@ -47,6 +47,11 @@ model Company {
   integrations     Integration[]
   notificationChannels NotificationChannel[]
   notifications    Notification[]
+  loans            Loan[]
+  salaryRevisions  SalaryRevision[]
+  perquisites      Perquisite[]
+  investmentProofs InvestmentProof[]
+  salaryHolds      SalaryHold[]
 }
 
 // ─── Branch ──────────────────────────────────────────────────
@@ -196,6 +201,11 @@ model Employee {
   documents             EmployeeDocument[]
   bankTransactions      BankTransaction[]
   reimbursements        ReimbursementClaim[]
+  loans                 Loan[]
+  salaryRevisions       SalaryRevision[]
+  perquisites           Perquisite[]
+  investmentProofs      InvestmentProof[]
+  salaryHolds           SalaryHold[]
   user                  User?
 
   @@unique([employeeCode, companyId])
@@ -906,4 +916,144 @@ model Notification {
   @@index([companyId, createdAt])
   @@index([companyId, eventType])
   @@index([employeeId])
+}
+
+// ─── Loan Management ──────────────────────────────────────────
+model Loan {
+  id              String   @id @default(cuid())
+  companyId       String
+  employeeId      String
+  loanType        String   @default("PERSONAL") // PERSONAL | SALARY_ADVANCE | HOUSING | VEHICLE | OTHER
+  principal       Float
+  interestRate    Float    @default(0)   // annual % charged to employee
+  tenureMonths    Int
+  emi             Float                    // monthly instalment
+  startMonth      Int
+  startYear       Int
+  outstanding     Float                    // remaining principal
+  status          String   @default("ACTIVE") // ACTIVE | CLOSED | CANCELLED
+  reason          String?
+  disbursedAt     DateTime?
+  closedAt        DateTime?
+  createdBy       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  company         Company  @relation(fields: [companyId], references: [id])
+  employee        Employee @relation(fields: [employeeId], references: [id])
+  repayments      LoanRepayment[]
+
+  @@index([companyId, status])
+  @@index([employeeId])
+}
+
+model LoanRepayment {
+  id              String   @id @default(cuid())
+  loanId          String
+  installmentNo   Int
+  month           Int
+  year            Int
+  emiAmount       Float
+  principalPart   Float
+  interestPart    Float
+  outstandingAfter Float
+  status          String   @default("SCHEDULED") // SCHEDULED | PAID | SKIPPED
+  paidAt          DateTime?
+  payslipId       String?
+  createdAt       DateTime @default(now())
+
+  loan            Loan     @relation(fields: [loanId], references: [id], onDelete: Cascade)
+
+  @@unique([loanId, installmentNo])
+  @@index([loanId, year, month])
+}
+
+// ─── Salary Revisions ─────────────────────────────────────────
+model SalaryRevision {
+  id                String   @id @default(cuid())
+  companyId         String
+  employeeId        String
+  effectiveDate     DateTime @db.Date
+  previousCtc       Float
+  newCtc            Float
+  changeAmount      Float
+  changePct         Float
+  previousStructureId String?
+  newStructureId    String?
+  reason            String?
+  revisedBy         String?
+  createdAt         DateTime @default(now())
+
+  company           Company  @relation(fields: [companyId], references: [id])
+  employee          Employee @relation(fields: [employeeId], references: [id])
+
+  @@index([companyId, effectiveDate])
+  @@index([employeeId, effectiveDate])
+}
+
+// ─── Perquisites ──────────────────────────────────────────────
+model Perquisite {
+  id              String   @id @default(cuid())
+  companyId       String
+  employeeId      String
+  financialYear   String
+  type            String   // ACCOMMODATION | CAR | LOAN | ESOP | DRIVER | UTILITIES | OTHER
+  description     String?
+  taxableValue    Float    @default(0)
+  isTaxable       Boolean  @default(true)
+  createdBy       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  company         Company  @relation(fields: [companyId], references: [id])
+  employee        Employee @relation(fields: [employeeId], references: [id])
+
+  @@index([companyId, financialYear])
+  @@index([employeeId, financialYear])
+}
+
+// ─── Proof of Investment (POI) ────────────────────────────────
+model InvestmentProof {
+  id              String   @id @default(cuid())
+  companyId       String
+  employeeId      String
+  financialYear   String
+  section         String   // 80C | 80D | 80CCD1B | HRA | 24B | 80G | OTHER
+  description     String
+  declaredAmount  Float    @default(0)
+  proofAmount     Float    @default(0)  // verified amount from submitted proof
+  fileUrl         String?
+  status          String   @default("PENDING") // PENDING | VERIFIED | REJECTED
+  reviewedBy      String?
+  reviewedAt      DateTime?
+  reviewComment   String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  company         Company  @relation(fields: [companyId], references: [id])
+  employee        Employee @relation(fields: [employeeId], references: [id])
+
+  @@index([companyId, financialYear, status])
+  @@index([employeeId, financialYear])
+}
+
+// ─── Salary Withhold ──────────────────────────────────────────
+model SalaryHold {
+  id              String   @id @default(cuid())
+  companyId       String
+  employeeId      String
+  month           Int
+  year            Int
+  reason          String
+  status          String   @default("HELD") // HELD | RELEASED
+  heldBy          String?
+  releasedBy      String?
+  releasedAt      DateTime?
+  createdAt       DateTime @default(now())
+
+  company         Company  @relation(fields: [companyId], references: [id])
+  employee        Employee @relation(fields: [employeeId], references: [id])
+
+  @@unique([employeeId, month, year])
+  @@index([companyId, status])
 }

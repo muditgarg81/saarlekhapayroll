@@ -23,14 +23,19 @@ export class ComplianceController {
     return this.svc.esiChallan(req.user.companyId, Number(month), Number(year));
   }
 
+  @Get('states')
+  states(@Request() req: any) {
+    return this.svc.getStates(req.user.companyId);
+  }
+
   @Get('pt')
-  ptRegister(@Request() req: any, @Query('month') month: string, @Query('year') year: string) {
-    return this.svc.ptRegister(req.user.companyId, Number(month), Number(year));
+  ptRegister(@Request() req: any, @Query('month') month: string, @Query('year') year: string, @Query('state') state?: string) {
+    return this.svc.ptRegister(req.user.companyId, Number(month), Number(year), state || undefined);
   }
 
   @Get('lwf')
-  lwfRegister(@Request() req: any, @Query('month') month: string, @Query('year') year: string) {
-    return this.svc.lwfRegister(req.user.companyId, Number(month), Number(year));
+  lwfRegister(@Request() req: any, @Query('month') month: string, @Query('year') year: string, @Query('state') state?: string) {
+    return this.svc.lwfRegister(req.user.companyId, Number(month), Number(year), state || undefined);
   }
 
   @Get('gratuity')

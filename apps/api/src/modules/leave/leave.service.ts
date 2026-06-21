@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 // India national + major state holidays keyed by state (null = all states)
 const INDIA_NATIONAL_HOLIDAYS_2025 = [
@@ -68,6 +69,7 @@ export class LeaveService {
   constructor(
     private prisma: PrismaService,
     private audit:  AuditService,
+    private notifications: NotificationsService,
   ) {}
 
   // ── Policies ──────────────────────────────────────────────
@@ -287,6 +289,8 @@ export class LeaveService {
         });
       }
     }
+    // Notify the employee of the decision (fire-and-forget)
+    this.notifications.notifyLeaveStatus(app.employee.companyId, id).catch(() => {});
     return updated;
   }
 

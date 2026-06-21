@@ -60,6 +60,36 @@ export class ReportsController {
     return this.reportsService.getReportFields(req.user.companyId);
   }
 
+  @Get('payroll-liability')
+  payrollLiability(@Request() req: any, @Query('month') month: string, @Query('year') year: string) {
+    return this.reportsService.getPayrollLiability(req.user.companyId, Number(month), Number(year));
+  }
+
+  @Get('ecr')
+  ecr(@Request() req: any, @Query('month') month: string, @Query('year') year: string) {
+    return this.reportsService.getEcrFile(req.user.companyId, Number(month), Number(year));
+  }
+
+  @Get('annual-pt')
+  annualPt(@Request() req: any, @Query('fy') fy: string) {
+    return this.reportsService.getAnnualPT(req.user.companyId, fy || currentFY());
+  }
+
+  @Get('leave-encashment')
+  leaveEncashment(@Request() req: any, @Query('fy') fy: string) {
+    return this.reportsService.getLeaveEncashmentSummary(req.user.companyId, fy || currentFY());
+  }
+
+  @Get('variable-pay')
+  variablePay(@Request() req: any, @Query('month') month: string, @Query('year') year: string) {
+    return this.reportsService.getVariablePay(req.user.companyId, Number(month), Number(year));
+  }
+
+  @Get('donations')
+  donations(@Request() req: any, @Query('fy') fy: string) {
+    return this.reportsService.getDonationsSummary(req.user.companyId, fy || currentFY());
+  }
+
   @Post('custom')
   customReport(@Request() req: any, @Body() body: any) {
     return this.reportsService.buildCustomReport(req.user.companyId, body);

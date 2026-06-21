@@ -85,11 +85,11 @@ export class ComplianceService {
   }
 
   // ── Professional Tax Register ─────────────────────────────
-  async ptRegister(companyId: string, month: number, year: number) {
+  async ptRegister(companyId: string, month: number, year: number, stateFilter?: string) {
     const payslips = await this.getPayslips(companyId, month, year);
     const isFeb    = month === 2;
 
-    const rows = payslips.map(ps => {
+    let rows = payslips.map(ps => {
       const emp   = ps.employee as any;
       const state = emp.branch?.state || emp.state || '';
       const pt    = this.calcPT(state, ps.grossEarnings, isFeb);
@@ -102,18 +102,20 @@ export class ComplianceService {
       };
     });
 
-    const byState: Record<string, { count: number; total: number }> = {};
+    if (stateFilter) rows = rows.filter(r => r.state === stateFilter);
+
+    const byState: Record<string, { count: number; total: number; levies: boolean }> = {};
     for (const r of rows) {
-      if (!byState[r.state]) byState[r.state] = { count: 0, total: 0 };
+      if (!byState[r.state]) byState[r.state] = { count: 0, total: 0, levies: !!PT_SLABS[r.state]?.length };
       byState[r.state].count++;
       byState[r.state].total += r.pt;
     }
 
-    return { month, year, rows, byState, totalPT: rows.reduce((s, r) => s + r.pt, 0) };
+    return { month, year, stateFilter: stateFilter || null, rows, byState, totalPT: rows.reduce((s, r) => s + r.pt, 0) };
   }
 
   // ── LWF Register ─────────────────────────────────────────
-  async lwfRegister(companyId: string, month: number, year: number) {
+  async lwfRegister(companyId: string, month: number, year: number, stateFilter?: string) {
     const payslips = await this.getPayslips(companyId, month, year);
     const isJune   = month === 6;
     const isDec    = month === 12;
@@ -122,6 +124,7 @@ export class ComplianceService {
     for (const ps of payslips) {
       const emp   = ps.employee as any;
       const state = emp.branch?.state || emp.state || '';
+      if (stateFilter && state !== stateFilter) continue;
       const rate  = LWF_RATES[state];
       if (!rate) continue;
       const ok =
@@ -145,7 +148,21 @@ export class ComplianceService {
       { employee: 0, employer: 0, total: 0 },
     );
 
-    return { month, year, rows, totals };
+    return { month, year, stateFilter: stateFilter || null, rows, totals };
+  }
+
+  // ── States present in the workforce (for state filter) ────
+  async getStates(companyId: string) {
+    const [company, employees, branches] = await Promise.all([
+      this.prisma.company.findUnique({ where: { id: companyId }, select: { state: true } }),
+      this.prisma.employee.findMany({ where: { companyId, status: 'ACTIVE' }, select: { state: true } }),
+      this.prisma.branch.findMany({ where: { companyId }, select: { state: true } }),
+    ]);
+    const set = new Set<string>();
+    employees.forEach(e => e.state && set.add(e.state));
+    branches.forEach(b => b.state && set.add(b.state));
+    const states = Array.from(set).sort();
+    return { companyState: company?.state || null, states };
   }
 
   // ── Gratuity Register ─────────────────────────────────────
@@ -288,7 +305,8 @@ export class ComplianceService {
     for (const slab of slabs) {
       if (gross <= slab.upTo) {
         let tax = slab.tax;
-        if (state === 'Maharashtra' && isFeb && tax > 0) tax += MAHARASHTRA_FEB_EXTRA;
+        // Maharashtra: only the top ₹200 slab attracts the extra ₹100 in February (→ ₹300).
+        if (state === 'Maharashtra' && isFeb && tax === 200) tax += MAHARASHTRA_FEB_EXTRA;
         return tax;
       }
     }

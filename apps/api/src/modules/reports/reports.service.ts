@@ -302,6 +302,158 @@ export class ReportsService {
     return { financialYear, employeeCount: rows.length, rows, totals };
   }
 
+  // ─── Payroll Liability Summary ──────────────────────────────
+  /** Consolidated amounts payable for a month: net to employees + statutory dues. */
+  async getPayrollLiability(companyId: string, month: number, year: number) {
+    const payslips = await this._getPayslipsWithLines(companyId, month, year);
+    if (!payslips.length) return { month, year, found: false, lines: [], totalLiability: 0, employeeCount: 0 };
+
+    let netPay = 0, pfEE = 0, pfER = 0, esiEE = 0, esiER = 0, pt = 0, lwf = 0, tds = 0;
+    for (const p of payslips) {
+      netPay += p.netPay;
+      const get = (code: string) => p.lines.find(l => l.component.code === code)?.amount || 0;
+      pfEE += get('PF_EMPLOYEE');
+      const pfWage = get('PF_EMPLOYEE') > 0 ? Math.round(get('PF_EMPLOYEE') / 0.12) : 0;
+      pfER += Math.round(pfWage * (PF_EPF_RATE + PF_EPS_RATE + PF_EDLI_RATE + PF_ADMIN_RATE));
+      esiEE += get('ESI_EMPLOYEE');
+      esiER += p.grossEarnings <= 21000 && get('ESI_EMPLOYEE') > 0 ? Math.round(p.grossEarnings * ESI_EMPLOYER_RATE) : 0;
+      pt  += get('PT');
+      lwf += get('LWF');
+      tds += get('TDS');
+    }
+
+    const r = (n: number) => Math.round(n);
+    const lines = [
+      { head: 'Net Salary Payable', category: 'PAYROLL', payable: r(netPay), payTo: 'Employees (bank transfer)' },
+      { head: 'PF (Employee + Employer)', category: 'STATUTORY', payable: r(pfEE + pfER), payTo: 'EPFO', due: `${year}-${String(month).padStart(2,'0')}-15` },
+      { head: 'ESI (Employee + Employer)', category: 'STATUTORY', payable: r(esiEE + esiER), payTo: 'ESIC', due: `${year}-${String(month).padStart(2,'0')}-15` },
+      { head: 'Professional Tax', category: 'STATUTORY', payable: r(pt), payTo: 'State Govt', due: `${year}-${String(month).padStart(2,'0')}-21` },
+      { head: 'Labour Welfare Fund', category: 'STATUTORY', payable: r(lwf), payTo: 'State LWF Board' },
+      { head: 'TDS (Income Tax)', category: 'STATUTORY', payable: r(tds), payTo: 'Income Tax Dept', due: `${year}-${String(month).padStart(2,'0')}-07` },
+    ].filter(l => l.payable > 0);
+
+    const statutoryTotal = lines.filter(l => l.category === 'STATUTORY').reduce((s, l) => s + l.payable, 0);
+    return {
+      month, year, found: true, employeeCount: payslips.length, lines,
+      netPayable: r(netPay), statutoryPayable: statutoryTotal,
+      totalLiability: r(netPay) + statutoryTotal,
+    };
+  }
+
+  // ─── EPF ECR text-file export (EPFO ECR 2.0) ────────────────
+  /** Returns the #~# delimited ECR return text for upload to the EPFO portal. */
+  async getEcrFile(companyId: string, month: number, year: number) {
+    const payslips = await this._getPayslipsWithLines(companyId, month, year);
+    const lines: string[] = [];
+    let members = 0, totalEpfWage = 0, totalEpf = 0, totalEps = 0, totalEpfEps = 0;
+
+    for (const p of payslips) {
+      const pfEE = p.lines.find(l => l.component.code === 'PF_EMPLOYEE')?.amount || 0;
+      if (pfEE <= 0) continue;
+      const basic = p.lines.find(l => l.component.code === 'BASIC')?.amount || 0;
+      const epfWage = Math.min(basic, 15000);                  // EPF/EPS/EDLI wage (capped)
+      const grossWage = Math.round(p.grossEarnings);
+      const epfEE = Math.round(epfWage * 0.12);                // employee 12%
+      const eps   = Math.round(epfWage * PF_EPS_RATE);         // 8.33%
+      const epfER = epfEE - eps;                                // employer EPF share (diff)
+      const ncpDays = p.lopDays || 0;                           // non-contributory days
+      members++;
+      totalEpfWage += epfWage; totalEpf += epfEE; totalEps += eps; totalEpfEps += epfER;
+      // ECR fields: UAN#~#Name#~#GrossWages#~#EPFWages#~#EPSWages#~#EDLIWages#~#EPFContribEE#~#EPSContrib#~#EPFEPSDiff#~#NCPdays#~#RefundAdvances
+      lines.push([
+        p.employee.uan || '', `${p.employee.firstName} ${p.employee.lastName}`,
+        grossWage, epfWage, epfWage, epfWage, epfEE, eps, epfER, ncpDays, 0,
+      ].join('#~#'));
+    }
+
+    const filename = `ECR_${companyId.slice(-6)}_${String(month).padStart(2,'0')}${year}.txt`;
+    return {
+      month, year, filename, memberCount: members,
+      content: lines.join('\n'),
+      summary: { totalEpfWage: Math.round(totalEpfWage), totalEpf: Math.round(totalEpf), totalEps: Math.round(totalEps), totalEpfEps: Math.round(totalEpfEps) },
+    };
+  }
+
+  // ─── Annual Professional Tax Report ─────────────────────────
+  /** Month-wise PT per employee across a financial year. */
+  async getAnnualPT(companyId: string, financialYear: string) {
+    const [fromYr] = financialYear.split('-').map(Number);
+    const payslips = await this.prisma.payslip.findMany({
+      where: { payrun: { companyId }, status: { in: ['FINALIZED', 'PAID'] },
+        OR: [{ year: fromYr, month: { gte: 4 } }, { year: fromYr + 1, month: { lte: 3 } }] },
+      include: { employee: { select: { id: true, firstName: true, lastName: true, employeeCode: true, state: true } }, lines: { include: { component: true } } },
+    });
+
+    // FY month order: Apr(4)..Mar(3) → index 0..11
+    const fyIndex = (m: number) => (m >= 4 ? m - 4 : m + 8);
+    const byEmp: Record<string, any> = {};
+    for (const p of payslips) {
+      const pt = p.lines.find(l => l.component.code === 'PT')?.amount || 0;
+      const id = p.employeeId;
+      if (!byEmp[id]) byEmp[id] = { employeeCode: p.employee.employeeCode, name: `${p.employee.firstName} ${p.employee.lastName}`, state: p.employee.state, months: Array(12).fill(0), total: 0 };
+      byEmp[id].months[fyIndex(p.month)] += pt;
+      byEmp[id].total += pt;
+    }
+    const rows = Object.values(byEmp).filter((r: any) => r.total > 0).sort((a: any, b: any) => b.total - a.total);
+    return { financialYear, monthLabels: ['Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar'], rows, grandTotal: rows.reduce((s: number, r: any) => s + r.total, 0) };
+  }
+
+  // ─── Leave Encashment Summary ───────────────────────────────
+  async getLeaveEncashmentSummary(companyId: string, financialYear: string) {
+    const balances = await this.prisma.leaveBalance.findMany({
+      where: { financialYear, encashed: { gt: 0 }, employee: { companyId } },
+      include: { employee: { select: { firstName: true, lastName: true, employeeCode: true, ctc: true } }, policy: { select: { name: true, leaveType: true } } },
+    });
+
+    const rows = balances.map(b => {
+      const monthlyBasic = (b.employee.ctc / 12) * 0.4; // basic ≈ 40% of CTC
+      const perDay = monthlyBasic / 26;
+      return {
+        employeeCode: b.employee.employeeCode, name: `${b.employee.firstName} ${b.employee.lastName}`,
+        leaveType: b.policy?.leaveType, policy: b.policy?.name,
+        daysEncashed: b.encashed, ratePerDay: Math.round(perDay), amount: Math.round(perDay * b.encashed),
+      };
+    }).sort((a, b) => b.amount - a.amount);
+
+    return { financialYear, rows, totals: { days: rows.reduce((s, r) => s + r.daysEncashed, 0), amount: rows.reduce((s, r) => s + r.amount, 0) } };
+  }
+
+  // ─── Variable Pay Earnings Report ───────────────────────────
+  /** Non-fixed earnings (everything except BASIC/HRA/DA) per employee for a month. */
+  async getVariablePay(companyId: string, month: number, year: number) {
+    const FIXED = new Set(['BASIC', 'HRA', 'DA']);
+    const payslips = await this._getPayslipsWithLines(companyId, month, year);
+
+    const componentSet = new Set<string>();
+    const rows = payslips.map(p => {
+      const variable: Record<string, number> = {};
+      let total = 0;
+      for (const l of p.lines) {
+        if (l.component.type === 'EARNING' && !FIXED.has(l.component.code) && l.amount > 0) {
+          variable[l.component.name] = (variable[l.component.name] || 0) + l.amount;
+          componentSet.add(l.component.name);
+          total += l.amount;
+        }
+      }
+      return { employeeCode: p.employee.employeeCode, name: `${p.employee.firstName} ${p.employee.lastName}`, variable, total: Math.round(total) };
+    }).filter(r => r.total > 0).sort((a, b) => b.total - a.total);
+
+    return { month, year, components: Array.from(componentSet).sort(), rows, grandTotal: rows.reduce((s, r) => s + r.total, 0) };
+  }
+
+  // ─── Employee Donations Summary (80G) ───────────────────────
+  async getDonationsSummary(companyId: string, financialYear: string) {
+    const decls = await this.prisma.tDSDeclaration.findMany({
+      where: { financialYear, section80G: { gt: 0 }, employee: { companyId } },
+      include: { employee: { select: { firstName: true, lastName: true, employeeCode: true, pan: true } } },
+    });
+    const rows = decls.map(d => ({
+      employeeCode: d.employee.employeeCode, name: `${d.employee.firstName} ${d.employee.lastName}`, pan: d.employee.pan,
+      donation80G: Math.round(d.section80G), regime: d.regime, approved: d.isApproved,
+    })).sort((a, b) => b.donation80G - a.donation80G);
+    return { financialYear, rows, total: rows.reduce((s, r) => s + r.donation80G, 0) };
+  }
+
   // ─── Custom report builder ──────────────────────────────────
   private static readonly TEXT_FIELDS = ['employeeCode', 'name', 'designation', 'department', 'pan', 'uan'];
 

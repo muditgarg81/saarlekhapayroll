@@ -185,6 +185,12 @@ export const reportsApi = {
   ptChallan:      (month: number, year: number) => api.get('/reports/challan/pt',  { params: { month, year } }),
   yearEndTax:     (fy: string)                   => api.get('/reports/year-end-tax', { params: { fy } }),
   fields:         ()                             => api.get('/reports/fields'),
+  payrollLiability:(month: number, year: number) => api.get('/reports/payroll-liability', { params: { month, year } }),
+  ecr:            (month: number, year: number) => api.get('/reports/ecr', { params: { month, year } }),
+  annualPt:       (fy: string)                   => api.get('/reports/annual-pt', { params: { fy } }),
+  leaveEncashment:(fy: string)                   => api.get('/reports/leave-encashment', { params: { fy } }),
+  variablePay:    (month: number, year: number) => api.get('/reports/variable-pay', { params: { month, year } }),
+  donations:      (fy: string)                   => api.get('/reports/donations', { params: { fy } }),
   custom:         (body: any)                    => api.post('/reports/custom', body),
   templates:      ()                             => api.get('/reports/templates'),
   saveTemplate:   (body: any)                    => api.post('/reports/templates', body),
@@ -219,6 +225,22 @@ export const tdsApi = {
   generateForm16:   (eid: string, fy?: string)        => api.post(`/tds/form16/${eid}`, {}, { params: { fy } }),
   getForm16:        (id: string)                      => api.get(`/tds/form16/${id}`),
   markEsigned:      (id: string)                      => api.patch(`/tds/form16/${id}/esign`),
+};
+
+// Notifications
+export const notificationsApi = {
+  catalog:            ()                                  => api.get('/notifications/catalog'),
+  channels:           ()                                  => api.get('/notifications/channels'),
+  saveChannel:        (channel: string, data: any)        => api.post(`/notifications/channels/${channel}`, data),
+  toggleChannel:      (channel: string, enabled: boolean) => api.patch(`/notifications/channels/${channel}/toggle`, { enabled }),
+  testChannel:        (channel: string, recipient: string)=> api.post(`/notifications/channels/${channel}/test`, { recipient }),
+  payrunReminders:    ()                                  => api.get('/notifications/payrun-reminders'),
+  sendPayrunReminders:()                                  => api.post('/notifications/payrun-reminders/send'),
+  complianceCalendar: ()                                  => api.get('/notifications/compliance-calendar'),
+  sendComplianceAlerts:()                                 => api.post('/notifications/compliance-calendar/send'),
+  broadcast:          (data: any)                         => api.post('/notifications/broadcast', data),
+  stats:              ()                                  => api.get('/notifications/stats'),
+  list:               (params?: any)                      => api.get('/notifications', { params }),
 };
 
 // AI Assistant
@@ -288,10 +310,11 @@ export const essApi = {
 
 // Compliance
 export const complianceApi = {
-  pf:       (month: number, year: number) => api.get('/compliance/pf',       { params: { month, year } }),
-  esi:      (month: number, year: number) => api.get('/compliance/esi',      { params: { month, year } }),
-  pt:       (month: number, year: number) => api.get('/compliance/pt',       { params: { month, year } }),
-  lwf:      (month: number, year: number) => api.get('/compliance/lwf',      { params: { month, year } }),
-  gratuity: ()                            => api.get('/compliance/gratuity'),
-  bonus:    (fy: string)                  => api.get('/compliance/bonus',     { params: { fy } }),
+  states:   ()                                          => api.get('/compliance/states'),
+  pf:       (month: number, year: number)               => api.get('/compliance/pf',  { params: { month, year } }),
+  esi:      (month: number, year: number)               => api.get('/compliance/esi', { params: { month, year } }),
+  pt:       (month: number, year: number, state?: string) => api.get('/compliance/pt',  { params: { month, year, state: state || undefined } }),
+  lwf:      (month: number, year: number, state?: string) => api.get('/compliance/lwf', { params: { month, year, state: state || undefined } }),
+  gratuity: ()                                          => api.get('/compliance/gratuity'),
+  bonus:    (fy: string)                                => api.get('/compliance/bonus', { params: { fy } }),
 };

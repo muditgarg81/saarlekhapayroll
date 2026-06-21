@@ -19,6 +19,7 @@ const navItems = [
   { href: '/tds', label: 'TDS & Tax', icon: '🧾' },
   { href: '/bank', label: 'Bank Payments', icon: '🏦' },
   { href: '/integrations', label: 'Integrations', icon: '🔌' },
+  { href: '/notifications', label: 'Notifications', icon: '📤' },
   { href: '/settings', label: 'Settings', icon: '🔧' },
 ];
 
