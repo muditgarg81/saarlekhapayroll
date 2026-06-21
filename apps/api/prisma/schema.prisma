@@ -45,6 +45,8 @@ model Company {
   contractorPayruns ContractorPayrun[]
   reportTemplates  ReportTemplate[]
   integrations     Integration[]
+  notificationChannels NotificationChannel[]
+  notifications    Notification[]
 }
 
 // ─── Branch ──────────────────────────────────────────────────
@@ -859,4 +861,49 @@ model IntegrationSyncLog {
 
   @@index([companyId, startedAt])
   @@index([integrationId, startedAt])
+}
+
+// ─── Notifications ────────────────────────────────────────────
+model NotificationChannel {
+  id          String   @id @default(cuid())
+  companyId   String
+  channel     String   // EMAIL | SMS | WHATSAPP
+  provider    String   // SMTP | SENDGRID | TWILIO | MSG91 | INTERAKT | GUPSHUP | KALEYRA
+  fromName    String?
+  fromAddress String?  // sender email / phone / WABA number
+  config      Json?    // provider creds/endpoints (secrets)
+  enabled     Boolean  @default(false)
+  createdBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company     Company  @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, channel])
+}
+
+model Notification {
+  id            String   @id @default(cuid())
+  companyId     String
+  channel       String   // EMAIL | SMS | WHATSAPP | IN_APP
+  eventType     String   // PAYRUN_REMINDER | COMPLIANCE_DEADLINE | APPROVAL_REQUEST | APPROVAL_RESULT | LEAVE_STATUS | PAYSLIP_PUBLISHED | CUSTOM
+  recipient     String   // email / phone
+  recipientName String?
+  employeeId    String?
+  userId        String?
+  subject       String?
+  body          String
+  status        String   @default("QUEUED") // QUEUED | SENT | FAILED | SKIPPED
+  error         String?
+  relatedEntity String?  // Payrun | Compliance | LeaveApplication ...
+  relatedId     String?
+  providerMsgId String?
+  sentAt        DateTime?
+  createdAt     DateTime @default(now())
+
+  company       Company  @relation(fields: [companyId], references: [id])
+
+  @@index([companyId, createdAt])
+  @@index([companyId, eventType])
+  @@index([employeeId])
 }
